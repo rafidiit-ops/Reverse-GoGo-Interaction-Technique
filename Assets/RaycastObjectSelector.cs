@@ -3,7 +3,8 @@
 public class RaycastObjectSelector : MonoBehaviour
 {
     public Transform rayOrigin;            // Right-hand controller transform
-    public float rayLength = 3f;
+    public float rayLength = Mathf.Infinity;  // Infinite ray distance for far object selection
+    public float maxVisualRayLength = 100f;   // Visual ray max length when not hitting anything
     public LayerMask selectableLayers;
     public HandCalibrationDepthScale depthScale;  // Reference to threshold system
     public LineRenderer lineRenderer;      // LineRenderer for VR-visible ray
@@ -124,8 +125,8 @@ public class RaycastObjectSelector : MonoBehaviour
             ClearHighlight();
             currentTarget = null;
             
-            // Draw ray at full length when not hitting anything
-            lineRenderer.SetPosition(1, rayOrigin.position + rayOrigin.forward * rayLength);
+            // Draw ray at visual max length when not hitting anything (use maxVisualRayLength instead of infinite)
+            lineRenderer.SetPosition(1, rayOrigin.position + rayOrigin.forward * maxVisualRayLength);
         }
     }
 
