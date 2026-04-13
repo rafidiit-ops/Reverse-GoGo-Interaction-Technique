@@ -14,6 +14,11 @@ public class ReverseGoGoGrab : MonoBehaviour
     public float minGrabDistance = 0.3f;     // Auto-release threshold
     public float minScaleDistance = 0.5f;    // Prevents scaling blow-up
 
+    [Header("Traditional GoGo Exponential Mapping")]
+    public float thresholdDistance = 0.3f;
+    public float scalingFactor = 20.0f;
+    public float maxExtensionDistance = 10.0f;
+
     private float initialDistance;
     private bool isGrabbing = false;
 
@@ -53,18 +58,46 @@ public class ReverseGoGoGrab : MonoBehaviour
     {
         if (targetObject == null) return;
 
-        Vector3 handOffset = rightHand.position - Camera.main.transform.position;
+        Vector3 hmdPos = Camera.main.transform.position;
+        Vector3 handOffset = rightHand.position - hmdPos;
 
         // X/Y stay 1:1
         Vector3 lateral = new Vector3(handOffset.x, handOffset.y, 0f);
 
-        // Z is scaled
-        float scale = initialDistance / Mathf.Max(currentHandDistance, minScaleDistance);
-        float scaledZ = handOffset.z * scale;
+        // Apply Traditional GoGo exponential mapping to depth
+        float mappedDistance = CalculateTraditionalGoGoMappedDistance(currentHandDistance);
+        
+        // Scale the forward movement by the mapping
+        float zDirection = handOffset.z >= 0 ? 1f : -1f;
+        float absHandZ = Mathf.Abs(handOffset.z);
+        float scaledZ = zDirection * mappedDistance;
 
-        Vector3 newPosition = Camera.main.transform.position + lateral + Camera.main.transform.forward * scaledZ;
+        Vector3 newPosition = hmdPos + lateral + Camera.main.transform.forward * scaledZ;
 
         targetObject.position = newPosition;
+    }
+
+    private float CalculateTraditionalGoGoMappedDistance(float handDistance)
+    {
+        // Traditional GoGo mapping:
+        // - Inside threshold: 1:1 (linear)
+        // - Beyond threshold: quadratic amplification
+        float safeThreshold = Mathf.Max(0.001f, thresholdDistance);
+        float virtualDistance;
+
+        if (handDistance <= safeThreshold)
+        {
+            virtualDistance = handDistance;
+        }
+        else
+        {
+            float beyondThreshold = handDistance - safeThreshold;
+            // Classic GoGo-style amplified extension: D_virtual = D_real + k * (D_real - threshold)^2
+            virtualDistance = handDistance + Mathf.Max(0f, scalingFactor) * beyondThreshold * beyondThreshold;
+            virtualDistance = Mathf.Min(virtualDistance, Mathf.Max(safeThreshold, maxExtensionDistance));
+        }
+
+        return virtualDistance;
     }
 
     void EndGrab()

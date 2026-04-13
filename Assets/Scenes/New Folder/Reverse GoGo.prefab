@@ -546,8 +546,20 @@ MonoBehaviour:
     serializedVersion: 2
     m_Bits: 8
   depthScale: {fileID: 0}
+  triggerAction:
+    m_UseReference: 0
+    m_Action:
+      m_Name: 
+      m_Type: 0
+      m_ExpectedControlType: 
+      m_Id: a79530af-526d-4975-aeb3-9625db443d9b
+      m_Processors: 
+      m_Interactions: 
+      m_SingletonActionBindings: []
+      m_Flags: 0
+    m_Reference: {fileID: 0}
   lineRenderer: {fileID: 0}
-  rayColor: {r: 0, g: 0, b: 0, a: 1}
+  rayColor: {r: 0, g: 1, b: 1, a: 1}
   rayWidth: 0.01
   highlightMaterial: {fileID: 0}
 --- !u!114 &6659320036369930648
@@ -590,6 +602,20 @@ MonoBehaviour:
       m_Flags: 0
     m_Reference: {fileID: 0}
   depthScale: {fileID: 0}
+  thresholdDistance: 0.3
+  scalingFactor: 20
+  maxExtensionDistance: 10
+  hideControllerWhileAttached: 1
+  attachMoveDeadzone: 0.015
+  immediateGrabDistance: 0.12
+  pullActivationRampTime: 0.08
+  hmdSafetyRadius: 0.12
+  nearGrabRadius: 0.15
+  nearGrabLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  showAttachPointGizmo: 0
+  attachPointGizmoRadius: 0.015
 --- !u!1 &2879986603401999449
 GameObject:
   m_ObjectHideFlags: 0
@@ -1654,22 +1680,13 @@ LineRenderer:
   - {x: 0, y: 0, z: 1}
   m_Parameters:
     serializedVersion: 3
-    widthMultiplier: 0.01
+    widthMultiplier: 0.005
     widthCurve:
       serializedVersion: 2
       m_Curve:
       - serializedVersion: 3
         time: 0
         value: 1
-        inSlope: 0
-        outSlope: 0
-        tangentMode: 0
-        weightedMode: 0
-        inWeight: 0.33333334
-        outWeight: 0.33333334
-      - serializedVersion: 3
-        time: 0.9438095
-        value: 1.0047053
         inSlope: 0
         outSlope: 0
         tangentMode: 0
@@ -3648,6 +3665,20 @@ MonoBehaviour:
       m_Flags: 0
     m_Reference: {fileID: 187161793506945269, guid: c348712bda248c246b8c49b3db54643f, type: 3}
   depthScale: {fileID: 6192909079923042950}
+  thresholdDistance: 0.3
+  scalingFactor: 40
+  maxExtensionDistance: 10
+  hideControllerWhileAttached: 1
+  attachMoveDeadzone: 0.015
+  immediateGrabDistance: 0.12
+  pullActivationRampTime: 0.08
+  hmdSafetyRadius: 0.12
+  nearGrabRadius: 0.15
+  nearGrabLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  showAttachPointGizmo: 0
+  attachPointGizmoRadius: 0.015
 --- !u!114 &6192909079923042950
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -3660,7 +3691,24 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: ff2dd02a468e7874fa6265f190baee9f, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::HandCalibrationDepthScale
-  thresholdDistance: 0.4
+  requireCalibrationAtStart: 0
+  showCalibrationOverlay: 0
+  minValidArmLength: 0.25
+  maxValidArmLength: 1.2
+  stableHoldSeconds: 3
+  stabilityTolerance: 0.015
+  extensionDeltaFromRest: 0.2
+  restSamplingSeconds: 1
+  activationMargin: 0.005
+  releaseHysteresis: 0.03
+  captureMessageDuration: 2.5
+  showWorldSpaceCalibrationHint: 0
+  worldHintLocalOffset: {x: 0, y: -0.12, z: 0.85}
+  applyCalibrationOnlyInReverseScene: 1
+  reverseSceneName: ReverseGoGo SampleScene
+  thresholdDistance: 0.3
+  thresholdReachRatio: 0.6
+  minThresholdGapFromFullExtension: 0.12
   exponentialPower: 2
   maxScalingFactor: 10
   hmdTransform: {fileID: 4041294547810556961}
@@ -3717,6 +3765,18 @@ MonoBehaviour:
     serializedVersion: 2
     m_Bits: 8
   depthScale: {fileID: 6192909079923042950}
+  triggerAction:
+    m_UseReference: 0
+    m_Action:
+      m_Name: 
+      m_Type: 0
+      m_ExpectedControlType: 
+      m_Id: a0a97b30-8820-41cb-af3a-9ad3af4e15b8
+      m_Processors: 
+      m_Interactions: 
+      m_SingletonActionBindings: []
+      m_Flags: 0
+    m_Reference: {fileID: 0}
   lineRenderer: {fileID: 0}
   rayColor: {r: 0, g: 1, b: 1, a: 1}
   rayWidth: 0.01

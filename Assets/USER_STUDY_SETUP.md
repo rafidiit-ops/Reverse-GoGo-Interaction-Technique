@@ -29,6 +29,10 @@ In the Inspector for StudyManager:
 - **Hand Attach**: Drag your VirtualHandManager GameObject here
 - **Data Logger**: Drag the DataLogger component (create GameObject with DataLogger if needed)
 
+**Object Distance:**
+- **Enforce Object Distance On Start**: Keep enabled to auto-correct cubes that start too close
+- **Minimum Object Distance From User**: Increase this value (e.g., `2.5` to `3.5`) to keep cubes farther from the player
+
 **Objects and Bubbles:**
 - **Colored Objects (Size: 4)**: Add your 4 phantom objects in any order
   - Element 0: Red Phantom

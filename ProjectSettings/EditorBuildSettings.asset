@@ -5,9 +5,18 @@ EditorBuildSettings:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Scenes:
-  - enabled: 1
+  - enabled: 0
     path: Assets/Scenes/SampleScene.unity
     guid: 9fc0d4010bbf28b4594072e72b8655ab
+  - enabled: 1
+    path: Assets/Scenes 1/UI.unity
+    guid: 9507e42c92d503f409709f7a1efc4c44
+  - enabled: 1
+    path: Assets/ReverseGoGo/ReverseGoGo SampleScene.unity
+    guid: 27c33fc07e5ff4a41bd529d3c63ab231
+  - enabled: 1
+    path: Assets/TraditionalGoGo/TraditionalGoGoSampleScene.unity
+    guid: cda94a481b12b2f468590afae82f14e9
   m_configObjects:
     Unity.XR.Oculus.Settings: {fileID: 11400000, guid: 439ea5acbda104a419444cc0663c1805, type: 2}
     UnityEditor.XR.ARCore.ARCoreSettings: {fileID: 11400000, guid: 3d6fc1fc20d39d54482acbcbc21adec4, type: 2}
