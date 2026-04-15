@@ -3691,7 +3691,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: ff2dd02a468e7874fa6265f190baee9f, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::HandCalibrationDepthScale
-  requireCalibrationAtStart: 0
+  requireCalibrationAtStart: 1
   showCalibrationOverlay: 0
   minValidArmLength: 0.25
   maxValidArmLength: 1.2
@@ -3704,7 +3704,7 @@ MonoBehaviour:
   captureMessageDuration: 2.5
   showWorldSpaceCalibrationHint: 0
   worldHintLocalOffset: {x: 0, y: -0.12, z: 0.85}
-  applyCalibrationOnlyInReverseScene: 1
+  applyCalibrationOnlyInReverseScene: 0
   reverseSceneName: ReverseGoGo SampleScene
   thresholdDistance: 0.3
   thresholdReachRatio: 0.6

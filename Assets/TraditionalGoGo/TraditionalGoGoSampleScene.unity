@@ -419,7 +419,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 210556513}
-  m_Enabled: 0
+  m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: ce7350b4dcfd6f94b8bf71b1359bab7e, type: 3}
   m_Name: 
@@ -517,7 +517,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: ff2dd02a468e7874fa6265f190baee9f, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::HandCalibrationDepthScale
-  requireCalibrationAtStart: 0
+  requireCalibrationAtStart: 1
   showCalibrationOverlay: 0
   minValidArmLength: 0.25
   maxValidArmLength: 1.2
@@ -530,7 +530,7 @@ MonoBehaviour:
   captureMessageDuration: 2.5
   showWorldSpaceCalibrationHint: 0
   worldHintLocalOffset: {x: 0, y: -0.12, z: 0.85}
-  applyCalibrationOnlyInReverseScene: 1
+  applyCalibrationOnlyInReverseScene: 0
   reverseSceneName: ReverseGoGo SampleScene
   thresholdDistance: 0.1
   thresholdReachRatio: 0.75
@@ -5401,7 +5401,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1743535473}
-  m_Enabled: 0
+  m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 4f93e4ee816abb34c98bbfe9a73dbe0a, type: 3}
   m_Name: 

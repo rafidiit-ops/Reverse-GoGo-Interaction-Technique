@@ -1,3 +1,4 @@
+using System.Reflection;
 using UnityEngine;
 using UnityEngine.XR.Management;
 
@@ -74,38 +75,24 @@ public class FixControllerTracking : MonoBehaviour
             Debug.Log($"   Update Type: {trackedPoseDriver.updateType}");
             Debug.Log($"   Device Node: {trackedPoseDriver.deviceType}");
         }
-        
-        // Check for XR Controller component
-        var xrController = controller.GetComponent<UnityEngine.XR.Interaction.Toolkit.XRController>();
+
+        Component xrController = GetComponentByTypeName(controller, "UnityEngine.XR.Interaction.Toolkit.XRController");
         if (xrController != null)
         {
             Debug.Log($"✅ XRController found");
-            Debug.Log($"   Controller Node: {xrController.controllerNode}");
-            Debug.Log($"   Enabled: {xrController.enabled}");
-            
-            if (!xrController.enabled)
-            {
-                xrController.enabled = true;
-                Debug.Log($"   ✅ ENABLED XRController");
-            }
+            LogPropertyIfPresent(xrController, "controllerNode", "   Controller Node");
+            LogAndEnableBehaviour(xrController, "XRController");
         }
         else
         {
             Debug.LogWarning($"⚠️ No XRController component found on {name}");
         }
-        
-        // Check for ActionBasedController (newer XR toolkit)
-        var actionController = controller.GetComponent<UnityEngine.XR.Interaction.Toolkit.ActionBasedController>();
+
+        Component actionController = GetComponentByTypeName(controller, "UnityEngine.XR.Interaction.Toolkit.ActionBasedController");
         if (actionController != null)
         {
             Debug.Log($"✅ ActionBasedController found");
-            Debug.Log($"   Enabled: {actionController.enabled}");
-            
-            if (!actionController.enabled)
-            {
-                actionController.enabled = true;
-                Debug.Log($"   ✅ ENABLED ActionBasedController");
-            }
+            LogAndEnableBehaviour(actionController, "ActionBasedController");
         }
         
         if (trackedPoseDriver == null && xrController == null && actionController == null)
@@ -114,5 +101,41 @@ public class FixControllerTracking : MonoBehaviour
             Debug.LogError($"   Controller won't track without XRController or TrackedPoseDriver!");
             Debug.LogError($"   ACTION: Add XRController or ActionBasedController component");
         }
+    }
+
+    private static Component GetComponentByTypeName(Component source, string fullTypeName)
+    {
+        if (source == null)
+            return null;
+
+        var type = System.Type.GetType(fullTypeName);
+        return type != null ? source.GetComponent(type) : null;
+    }
+
+    private static void LogPropertyIfPresent(Component component, string propertyName, string label)
+    {
+        if (component == null)
+            return;
+
+        PropertyInfo property = component.GetType().GetProperty(propertyName, BindingFlags.Instance | BindingFlags.Public);
+        if (property == null)
+            return;
+
+        object value = property.GetValue(component, null);
+        Debug.Log($"{label}: {value}");
+    }
+
+    private static void LogAndEnableBehaviour(Component component, string componentLabel)
+    {
+        Behaviour behaviour = component as Behaviour;
+        if (behaviour == null)
+            return;
+
+        Debug.Log($"   Enabled: {behaviour.enabled}");
+        if (behaviour.enabled)
+            return;
+
+        behaviour.enabled = true;
+        Debug.Log($"   ✅ ENABLED {componentLabel}");
     }
 }

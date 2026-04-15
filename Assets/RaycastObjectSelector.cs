@@ -73,6 +73,19 @@ public class RaycastObjectSelector : MonoBehaviour
         EnsureLineRendererCanSetPositions();
         ApplyRayVisualSettings();
 
+        // Check if arm calibration is complete (required at game start)
+        bool isCalibrated = depthScale != null && depthScale.IsCalibrationComplete();
+        if (!isCalibrated)
+        {
+            if (lineRenderer.enabled)
+            {
+                lineRenderer.enabled = false;
+                ClearHighlight();
+                currentTarget = null;
+            }
+            return;
+        }
+
         // ReverseGoGo behavior: ray appears only when hand is in extension zone and not grabbing.
         bool shouldShowRay = !isGrabbed && IsRayExtensionActive();
 

@@ -1,5 +1,7 @@
 using UnityEngine;
+using UnityEngine.InputSystem;
 using UnityEngine.SceneManagement;
+using UnityEngine.XR;
 
 /// <summary>
 /// Hand Calibration and Depth Scaling for ReverseGoGo
@@ -43,6 +45,10 @@ public class HandCalibrationDepthScale : MonoBehaviour
     public Transform controllerTransform;            // Right hand controller
     public VirtualHandAttach virtualHandAttach;     // Reference to grab script
 
+    [Header("Arm Length Capture")]
+    public InputActionProperty captureArmLengthAction;
+    public bool showArmLengthWindow = true;
+
     private float currentDistanceBeyondThreshold;    // Current controller distance beyond threshold
     private float depthScalingFactor = 1.0f;        // Current scaling multiplier
     private bool isControllerBeyondThreshold = false;
@@ -58,18 +64,35 @@ public class HandCalibrationDepthScale : MonoBehaviour
     private bool showCaptureMessage;
     private float captureMessageUntilTime;
     private string captureMessage = "";
+    private float _capturedArmLength = 0f;
+    private bool _armCaptured = false;
+    private bool _calibrationComplete = false;
+    private float _lastMissingActionLogTime = -999f;
+    private bool _loggedCaptureBinding = false;
+    private bool _prevRightTriggerPressed = false;
     private GameObject worldHintObject;
     private TextMesh worldHintText;
 
     void Start()
     {
         ResolveReferences();
+        applyCalibrationOnlyInReverseScene = false;
+        _calibrationComplete = false;
+        _armCaptured = false;
 
-        if (!ShouldRunReverseCalibration())
+        InputAction captureAction = GetCaptureAction();
+        if (captureAction != null)
         {
-            isCalibrated = true;
-            calibrationStatus = "";
+            captureAction.Enable();
+            Debug.Log("[ArmLength] Capture input enabled successfully.");
         }
+        else
+        {
+            Debug.LogWarning("[ArmLength] No capture input action found. Will use XR right-hand trigger-button fallback.");
+        }
+
+        isCalibrated = false;
+        calibrationStatus = "Extend arm fully, then press trigger to capture arm length.";
 
         if (hmdTransform == null)
         {
@@ -97,7 +120,51 @@ public class HandCalibrationDepthScale : MonoBehaviour
         ResolveReferences();
 
         if (hmdTransform == null || controllerTransform == null)
+        {
+            Debug.LogWarning($"[ArmLength] Missing transforms - HMD: {hmdTransform != null}, Controller: {controllerTransform != null}");
             return;
+        }
+
+        InputAction captureAction = GetCaptureAction();
+
+        // Arm length capture: press assigned button while arm is fully extended (not grabbing)
+            if (captureAction.WasPressedThisFrame())
+        bool capturePressedThisFrame = WasCapturePressedThisFrame();
+        if (capturePressedThisFrame)
+                _capturedArmLength = Vector3.Distance(hmdTransform.position, controllerTransform.position);
+            _capturedArmLength = Vector3.Distance(hmdTransform.position, controllerTransform.position);
+            Debug.Log($"[ArmLength] Capture press detected. Distance measured: {_capturedArmLength:F3}m");
+            
+            // Check if not grabbing
+            if (virtualHandAttach == null || !virtualHandAttach.IsAttached())
+                
+                _armCaptured = true;
+                // Also update calibration thresholds so the gain uses the new arm length
+                calibratedFullExtensionDistance = _capturedArmLength;
+                float derived = _capturedArmLength * Mathf.Clamp01(thresholdReachRatio);
+                float maxT = _capturedArmLength - Mathf.Max(0.02f, minThresholdGapFromFullExtension);
+                thresholdDistance = Mathf.Clamp(derived, minValidArmLength, Mathf.Max(minValidArmLength, maxT));
+                isCalibrated = true;
+                _calibrationComplete = true;
+                showCaptureMessage = true;
+                captureMessageUntilTime = Time.time + captureMessageDuration;
+                captureMessage = $"Arm length captured: {_capturedArmLength:F3}m | Threshold: {thresholdDistance:F3}m";
+                Debug.Log($"[ArmLength CAPTURED] Arm length: {_capturedArmLength:F3}m | Threshold: {thresholdDistance:F3}m | Status: READY TO PLAY");
+        {
+            else
+            {
+                Debug.Log("[ArmLength] Capture press detected but hand is grabbing. Release object first.");
+            }
+        }
+        else
+        {
+            InputAction captureAction = GetCaptureAction();
+            if (captureAction == null && Time.time - _lastMissingActionLogTime > 3f)
+            {
+                Debug.LogWarning("[ArmLength] Using XR trigger-button fallback. If capture fails, verify right-hand controller is tracked.");
+                _lastMissingActionLogTime = Time.time;
+            }
+        }
 
         if (!ShouldRunReverseCalibration())
         {
@@ -136,22 +203,19 @@ public class HandCalibrationDepthScale : MonoBehaviour
             isControllerBeyondThreshold = distanceFromHMD >= (activationDistance - activationMargin);
         }
 
-        // Calculate depth scaling factor based on exponential curve
+        // Calculate depth scaling factor based on absolute distance ratio.
+        // Desired behavior:
+        // - At threshold distance: 1x
+        // - Farther away: smoothly larger gain (distance-proportional)
+        // This keeps pull and forward behavior symmetric/reversible.
         if (isControllerBeyondThreshold)
         {
-            // Calculate scaling factor using exponential function
-            // At full extension (far from threshold): factor = 1.0
-            // As hand retracts toward threshold: factor increases exponentially
-            
-            // Normalized distance (0 at threshold, increases as hand extends)
-            float normalizedDistance = currentDistanceBeyondThreshold / Mathf.Max(activationDistance, 0.001f);
-            
-            // Inverse exponential curve (higher when closer to threshold)
-            // Using (1 / normalized distance)^exponentialPower to create acceleration effect
-            depthScalingFactor = Mathf.Pow(1.0f / (normalizedDistance + 0.1f), exponentialPower);
-            
-            // Clamp to max scaling factor
-            depthScalingFactor = Mathf.Min(depthScalingFactor, maxScalingFactor);
+            float safeActivationDistance = Mathf.Max(0.001f, activationDistance);
+            float distanceRatioFromHmd = distanceFromHMD / safeActivationDistance;
+
+            // 1x at threshold, then increases with distance (2m->~2x, 3m->~3x, etc.)
+            // bounded by maxScalingFactor for safety.
+            depthScalingFactor = Mathf.Clamp(distanceRatioFromHmd, 1.0f, Mathf.Max(1.0f, maxScalingFactor));
         }
         else
         {
@@ -159,7 +223,21 @@ public class HandCalibrationDepthScale : MonoBehaviour
         }
     }
 
-    private void UpdateCalibration(float distanceFromHMD)
+    private bool WasCapturePressedThisFrame()
+    {
+        InputAction captureAction = GetCaptureAction();
+        if (captureAction != null)
+            return captureAction.WasPressedThisFrame();
+
+        InputDevice rightHand = InputDevices.GetDeviceAtXRNode(XRNode.RightHand);
+        bool pressedNow = false;
+        if (rightHand.isValid)
+            rightHand.TryGetFeatureValue(CommonUsages.triggerButton, out pressedNow);
+
+        bool pressedThisFrame = pressedNow && !_prevRightTriggerPressed;
+        _prevRightTriggerPressed = pressedNow;
+        return pressedThisFrame;
+    }
     {
         if (!requireCalibrationAtStart || isCalibrated)
             return;
@@ -249,6 +327,11 @@ public class HandCalibrationDepthScale : MonoBehaviour
     public bool IsReadyForInteraction()
     {
         return !requireCalibrationAtStart || isCalibrated;
+    }
+
+    public bool IsCalibrationComplete()
+    {
+        return _calibrationComplete;
     }
 
     public float GetActivationDistance()
@@ -391,6 +474,32 @@ public class HandCalibrationDepthScale : MonoBehaviour
         }
     }
 
+    private InputAction GetCaptureAction()
+    {
+        InputAction action = captureArmLengthAction.action;
+        if (action != null)
+        {
+            if (!_loggedCaptureBinding)
+            {
+                Debug.Log("[ArmLength] Using captureArmLengthAction for calibration input.");
+                _loggedCaptureBinding = true;
+            }
+            return action;
+        }
+
+        if (virtualHandAttach != null && virtualHandAttach.triggerAction.action != null)
+        {
+            if (!_loggedCaptureBinding)
+            {
+                Debug.Log("[ArmLength] captureArmLengthAction not assigned. Falling back to VirtualHandAttach triggerAction.");
+                _loggedCaptureBinding = true;
+            }
+            return virtualHandAttach.triggerAction.action;
+        }
+
+        return null;
+    }
+
     private void OnDestroy()
     {
         if (worldHintObject != null)
@@ -401,6 +510,43 @@ public class HandCalibrationDepthScale : MonoBehaviour
 
     private void OnGUI()
     {
+        if (showArmLengthWindow || !_calibrationComplete)
+        {
+            float currentDist = (hmdTransform != null && controllerTransform != null)
+                ? Vector3.Distance(hmdTransform.position, controllerTransform.position)
+                : 0f;
+            float boxH = _armCaptured ? 100f : 90f;
+            bool missingCaptureAction = GetCaptureAction() == null;
+            bool missingRefs = hmdTransform == null || controllerTransform == null;
+            float baseBoxHeight = boxH + (missingCaptureAction ? 16f : 0f) + (missingRefs ? 20f : 0f);
+            
+            GUI.Box(new Rect(10f, 10f, 320f, baseBoxHeight), "Arm Length");
+            GUI.Label(new Rect(26f, 34f, 288f, 22f), missingRefs ? "Current: waiting for HMD/controller" : $"Current: {currentDist:F3} m");
+            
+            if (_armCaptured)
+            {
+                GUI.Label(new Rect(26f, 56f, 288f, 22f), $"Captured: {_capturedArmLength:F3} m");
+                GUI.Label(new Rect(26f, 78f, 288f, 18f), "✓ CALIBRATED - Press button to re-capture.");
+            }
+            else
+            {
+                if (missingCaptureAction)
+                {
+                    GUI.Label(new Rect(26f, 56f, 288f, 28f), "No capture input found in scene wiring.");
+                    GUI.Label(new Rect(26f, 80f, 288f, 14f), "Assign capture action or triggerAction.");
+                }
+                else
+                {
+                    GUI.Label(new Rect(26f, 56f, 288f, 22f), "Extend arm fully, then press trigger.");
+                }
+            }
+
+            if (missingRefs)
+            {
+                GUI.Label(new Rect(26f, baseBoxHeight - 18f, 288f, 16f), "Waiting for HMD/controller references...");
+            }
+        }
+
         if (showCaptureMessage)
         {
             if (Time.time <= captureMessageUntilTime)

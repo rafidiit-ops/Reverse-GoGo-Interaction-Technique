@@ -78,6 +78,7 @@ public class VirtualHandAttach : MonoBehaviour
     private bool pullLockFirstPullFrame;
     private bool pullFirstPullFrameJustReleased;
     private Vector3 attachControllerStartPos;
+    private float _prevControllerDist = 0f;
 
     private Rigidbody attachedRigidbody;
     private bool attachedOriginalIsKinematic;
@@ -132,6 +133,12 @@ public class VirtualHandAttach : MonoBehaviour
 
         if (!isAttached && pressedThisFrame)
         {
+            // Block grab if arm calibration not yet complete
+            if (depthScale != null && !depthScale.IsCalibrationComplete())
+            {
+                return;
+            }
+
             GameObject selected = selector != null ? selector.GetCurrentTarget() : null;
             bool usedNearGrabFallback = false;
             if (selected == null)
@@ -229,6 +236,7 @@ public class VirtualHandAttach : MonoBehaviour
         attachRotationOffset = Quaternion.Inverse(controllerTransform.rotation) * grabRoot.transform.rotation;
         attachObjectHoldPos = grabRoot.transform.position;
         attachRealHandDistance = Vector3.Distance(Camera.main.transform.position, controllerTransform.position);
+        _prevControllerDist = attachRealHandDistance;
         // Never start in pull mode on attach. Even close re-grabs must wait for actual retract,
         // otherwise the object can snap into an unstable pull branch near the HMD.
         pullMappingActive = false;
@@ -376,24 +384,37 @@ public class VirtualHandAttach : MonoBehaviour
             pullActivationQueued = false;
             pullLockFirstPullFrame = false;
             pullFirstPullFrameJustReleased = false;
+            _prevControllerDist = Vector3.Distance(Camera.main.transform.position, controllerTransform.position);
         }
 
         if (pullMappingActive)
         {
-            float activationBlend = 1f;
-            if (pullActivatedTime >= 0f)
-            {
-                float transitionTime = Mathf.Max(
-                    Mathf.Max(0.0001f, pullActivationRampTime),
-                    Mathf.Max(0.0001f, pullStartTransitionBlendTime));
-                float rawBlend = Mathf.Clamp01((Time.time - pullActivatedTime) / transitionTime);
-                activationBlend = rawBlend * rawBlend * (3f - 2f * rawBlend);
-            }
+            Vector3 hmdPos = Camera.main.transform.position;
+            float currentControllerDist = Vector3.Distance(hmdPos, controllerTransform.position);
 
-            Vector3 desiredErrorOffset = Vector3.Lerp(pullEntryError, Vector3.zero, activationBlend);
-            float maxCorrectionStep = Mathf.Max(0.01f, pullStartCorrectionMaxSpeed) * Time.deltaTime;
-            pullCurrentError = Vector3.MoveTowards(pullCurrentError, desiredErrorOffset, maxCorrectionStep);
-            targetPos = (virtualHandPos - targetRotation * grabOffset) + pullCurrentError;
+            // Radial delta: positive = retracting toward user, negative = extending away
+            float controllerDelta = _prevControllerDist - currentControllerDist;
+            _prevControllerDist = currentControllerDist;
+
+            // Current attach-point position and distance from HMD
+            Vector3 currentAttachPoint = currentlyGrabbedObject.transform.position + targetRotation * grabOffset;
+            float attachDist = Mathf.Max(0.001f, Vector3.Distance(hmdPos, currentAttachPoint));
+            Vector3 attachDir = (currentAttachPoint - hmdPos) / attachDist;
+
+            float safeThreshold = depthScale != null
+                ? Mathf.Max(0.001f, depthScale.GetActivationDistance())
+                : Mathf.Max(0.001f, thresholdDistance);
+
+            // Distance-proportional gain: 1x at threshold, Nx at N*threshold
+            // (object at 5m → ~5x per unit controller delta, 4m → ~4x, 1x at threshold)
+            float gain = Mathf.Clamp(attachDist / safeThreshold, 1.0f,
+                Mathf.Max(1.0f, maxExtensionDistance / safeThreshold));
+
+            // Move attach point radially; clamp between threshold and original grab distance
+            float newAttachDist = Mathf.Clamp(attachDist - gain * controllerDelta,
+                safeThreshold, Mathf.Max(safeThreshold, pullStartAttachDistanceFromHmd));
+
+            targetPos = hmdPos + attachDir * newAttachDist - targetRotation * grabOffset;
         }
 
         currentlyGrabbedObject.transform.position = targetPos;
