@@ -21,13 +21,23 @@ public class HoverHighlight : MonoBehaviour
 
     public void OnHoverEnter(XRBaseInteractor interactor)
     {
+        ApplyHighlight();
+    }
+
+    public void OnHoverExit(XRBaseInteractor interactor)
+    {
+        ClearHighlight();
+    }
+
+    public void ApplyHighlight()
+    {
         if (rend != null && highlightMaterial != null)
         {
             rend.material = highlightMaterial;
         }
     }
 
-    public void OnHoverExit(XRBaseInteractor interactor)
+    public void ClearHighlight()
     {
         if (rend != null && originalMaterial != null)
         {

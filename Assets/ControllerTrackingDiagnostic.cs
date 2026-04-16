@@ -19,7 +19,7 @@ public class ControllerTrackingDiagnostic : MonoBehaviour
         Debug.Log($"XR Input Subsystems: {inputSubsystems.Count}");
         foreach (var subsystem in inputSubsystems)
         {
-            Debug.Log($"  - {subsystem.SubsystemDescriptor.id}: Running={subsystem.running}");
+            Debug.Log($"  - {subsystem.subsystemDescriptor.id}: Running={subsystem.running}");
         }
         
         // Check available input devices

@@ -10,6 +10,9 @@ public class UserStudyManager : MonoBehaviour
     [Header("Objects and Bubbles")]
     public GameObject[] coloredObjects; // 4 colored objects (Red, Green, Blue, Yellow)
     public BubbleTarget[] bubbleTargets; // 4 bubble targets (Red, Green, Blue, Yellow)
+
+    [Header("Legacy Bubble Mode")]
+    public bool enableBubbleTargets = false;
     
     [Header("Participant Info")]
     private string currentParticipantID;
@@ -26,9 +29,16 @@ public class UserStudyManager : MonoBehaviour
     private float taskStartTime = 0f;
     private int currentSelectionCount = 0;
     private GameObject lastSelectedObject = null;
+
+    private const int RequiredPairs = 4;
     
     void Start()
     {
+        if (FindFirstObjectByType<SequentialPairVisibility>() != null)
+        {
+            enableBubbleTargets = false;
+        }
+
         // Initialize data logger
         dataLogger.InitializeSession();
         
@@ -37,10 +47,23 @@ public class UserStudyManager : MonoBehaviour
         Debug.Log($"Starting study for Participant {currentParticipantID}");
         
         // Subscribe to bubble events
-        foreach (BubbleTarget bubble in bubbleTargets)
+        if (enableBubbleTargets && bubbleTargets != null)
         {
-            bubble.OnObjectPlaced += HandleObjectPlaced;
+            foreach (BubbleTarget bubble in bubbleTargets)
+            {
+                if (bubble != null)
+                {
+                    bubble.OnObjectPlaced += HandleObjectPlaced;
+                }
+            }
         }
+        else
+        {
+            DisableAllBubbleTargetsInScene();
+        }
+
+        // Show only the first object-target pair at startup.
+        ShowOnlyCurrentPair();
         
         // Start first task
         taskStartTime = Time.time;
@@ -71,6 +94,18 @@ public class UserStudyManager : MonoBehaviour
     
     private void HandleObjectPlaced(GameObject placedObject, string bubbleColor, bool isCorrect)
     {
+        // Ignore placements after the 4th pair is complete.
+        if (currentObjectIndex >= RequiredPairs)
+        {
+            return;
+        }
+
+        // Ignore events from inactive/non-current pairs.
+        if (!IsCurrentPairEvent(placedObject, bubbleColor))
+        {
+            return;
+        }
+
         totalAttempts++;
         
         if (isCorrect)
@@ -81,17 +116,22 @@ public class UserStudyManager : MonoBehaviour
             selectionCounts.Add(currentSelectionCount);
             
             Debug.Log($"✅ Correct placement! Object placed in {bubbleColor} bubble. Time: {taskTime:F2}s, Selections: {currentSelectionCount}");
+
+            // Hide the exact completed object and target immediately.
+            HideCompletedPair(placedObject, bubbleColor);
             
             // Move to next object
             currentObjectIndex++;
             
             // Check if all 4 objects are placed
-            if (currentObjectIndex >= 4)
+            if (currentObjectIndex >= RequiredPairs)
             {
                 FinishStudy();
             }
             else
             {
+                ShowOnlyCurrentPair();
+
                 // Reset for next object
                 taskStartTime = Time.time;
                 currentSelectionCount = 0;
@@ -175,12 +215,127 @@ public class UserStudyManager : MonoBehaviour
         taskStartTime = Time.time;
         
         // Reset all bubbles
-        foreach (BubbleTarget bubble in bubbleTargets)
+        if (enableBubbleTargets && bubbleTargets != null)
         {
-            bubble.ResetVisual();
+            foreach (BubbleTarget bubble in bubbleTargets)
+            {
+                if (bubble != null)
+                {
+                    bubble.ResetVisual();
+                }
+            }
         }
+
+        SequentialPairVisibility sequenceController = FindFirstObjectByType<SequentialPairVisibility>();
+        if (sequenceController != null)
+        {
+            sequenceController.ResetSequence();
+        }
+
+        // Start next participant from the first pair only.
+        ShowOnlyCurrentPair();
         
         Debug.Log($"Study reset. Ready for Participant {currentParticipantID}");
+    }
+
+    private void ShowOnlyCurrentPair()
+    {
+        int pairCount = RequiredPairs;
+
+        if (coloredObjects == null)
+        {
+            pairCount = 0;
+        }
+        else if (enableBubbleTargets)
+        {
+            pairCount = Mathf.Min(RequiredPairs, coloredObjects.Length, bubbleTargets != null ? bubbleTargets.Length : 0);
+        }
+        else
+        {
+            pairCount = Mathf.Min(RequiredPairs, coloredObjects.Length);
+        }
+
+        for (int i = 0; i < pairCount; i++)
+        {
+            bool isCurrent = i == currentObjectIndex;
+            SetPairActive(i, isCurrent);
+        }
+    }
+
+    private void SetPairActive(int index, bool isActive)
+    {
+        if (coloredObjects != null && index >= 0 && index < coloredObjects.Length && coloredObjects[index] != null)
+        {
+            coloredObjects[index].SetActive(isActive);
+        }
+
+        if (enableBubbleTargets && bubbleTargets != null && index >= 0 && index < bubbleTargets.Length && bubbleTargets[index] != null)
+        {
+            bubbleTargets[index].gameObject.SetActive(isActive);
+            if (isActive)
+            {
+                bubbleTargets[index].ResetVisual();
+            }
+        }
+    }
+
+    private bool IsCurrentPairEvent(GameObject placedObject, string bubbleColor)
+    {
+        bool objectMatchesCurrent = coloredObjects != null
+            && currentObjectIndex >= 0
+            && currentObjectIndex < coloredObjects.Length
+            && coloredObjects[currentObjectIndex] != null
+            && placedObject == coloredObjects[currentObjectIndex];
+
+        bool bubbleMatchesCurrent = !enableBubbleTargets || (bubbleTargets != null
+            && currentObjectIndex >= 0
+            && currentObjectIndex < bubbleTargets.Length
+            && bubbleTargets[currentObjectIndex] != null
+            && string.Equals(bubbleTargets[currentObjectIndex].bubbleColor, bubbleColor, System.StringComparison.OrdinalIgnoreCase));
+
+        return objectMatchesCurrent && bubbleMatchesCurrent;
+    }
+
+    private void HideCompletedPair(GameObject placedObject, string bubbleColor)
+    {
+        if (placedObject != null)
+        {
+            placedObject.SetActive(false);
+        }
+
+        if (!enableBubbleTargets || bubbleTargets == null)
+        {
+            return;
+        }
+
+        for (int i = 0; i < bubbleTargets.Length; i++)
+        {
+            if (bubbleTargets[i] == null)
+            {
+                continue;
+            }
+
+            bool isColorMatch = string.Equals(bubbleTargets[i].bubbleColor, bubbleColor, System.StringComparison.OrdinalIgnoreCase);
+            bool isActive = bubbleTargets[i].gameObject.activeSelf;
+
+            if (isColorMatch && isActive)
+            {
+                bubbleTargets[i].gameObject.SetActive(false);
+                break;
+            }
+        }
+    }
+
+    private void DisableAllBubbleTargetsInScene()
+    {
+        BubbleTarget[] allBubbles = FindObjectsByType<BubbleTarget>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+        for (int i = 0; i < allBubbles.Length; i++)
+        {
+            if (allBubbles[i] != null)
+            {
+                allBubbles[i].gameObject.SetActive(false);
+            }
+        }
     }
     
     void OnDestroy()

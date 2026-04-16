@@ -10,6 +10,26 @@ public class VirtualHandAttach : MonoBehaviour
     public InputActionProperty gripAction;        // XRI RightHand Grip (remote pull)
     public HandCalibrationDepthScale depthScale;  // Hand calibration system
 
+    [Header("Smoothing")]
+    public float controllerDeltaSmoothing = 25f;  // Smooths controller jitter before gain (higher = less lag)
+    public float gainSmoothing = 12f;             // Smooths gain changes as object approaches
+    public float maxLinearSpeed = 50f;            // Caps velocity (m/s)
+
+    [Header("Forward Smoothing")]
+    public float forwardDirectionDeadzone = 0.002f; // Radial delta deadzone to avoid mode flicker
+    public float forwardDeltaSmoothing = 14f;       // Extra smoothing for outward motion
+    public float forwardGainSmoothing = 8f;         // Gain smoothing for outward motion
+
+    [Header("Calibration Range")]
+    public float directGrabDistance = 0.1f;       // Below this, object behaves like direct hand grab
+
+    [Header("Near-Hand Assist")]
+    public float nearHandResponsivenessMultiplier = 2.5f; // Higher response when object is near threshold
+    public float nearHandConvergenceSpeed = 8f;           // Pulls object toward controller near threshold
+
+    [Header("Controller Visuals")]
+    public bool hideControllerWhileAttached = true;
+
     private bool isAttached = false;              // Trigger mode (hand attached)
     private bool isRemotePulling = false;         // Grip mode (remote pull with scaling)
     private GameObject currentlyGrabbedObject;
@@ -24,6 +44,15 @@ public class VirtualHandAttach : MonoBehaviour
     private Vector3 grabOffset;                  // Offset from virtual hand to object (constant during grab)
     private Quaternion initialControllerRotation; // Controller rotation when grab started
     private Quaternion initialObjectRotation;     // Object rotation when grab started
+    private Quaternion centerDirectionOffset = Quaternion.identity; // Keeps initial center-relative direction to avoid snap on attach
+    private Vector3 previousControllerPosition;   // Controller position from previous frame (for delta mapping)
+    private Vector3 smoothedControllerDelta;      // Low-pass filtered controller delta
+    private float smoothedSpatialGain = 1f;       // Low-pass filtered gain for stable transition
+    private bool isForwardModeLatched = false;    // Prevents rapid forward/pull mode toggling
+    private bool wasMovingForwardLastFrame = false;
+    private float forwardRecoveryStartRadius = 0f;
+    private float forwardRecoveryStartControllerRadius = 0f;
+    private Renderer[] controllerRenderers;
 
     // Public accessors for UserStudyManager
     public bool IsAttached() { return isAttached; }
@@ -51,6 +80,8 @@ public class VirtualHandAttach : MonoBehaviour
         // Enable input actions
         triggerAction.action.Enable();
         gripAction.action.Enable();
+
+        CacheControllerRenderers();
     }
 
     void Update()
@@ -61,6 +92,12 @@ public class VirtualHandAttach : MonoBehaviour
         // ===== TRIGGER BUTTON: Attach hand and activate Go-Go mode =====
         if (triggerAction.action.WasPressedThisFrame() && !isAttached)
         {
+            if (depthScale != null && depthScale.requireCalibrationBeforeTracking && !depthScale.IsArmLengthRecorded())
+            {
+                Debug.Log("[Go-Go] Waiting for arm-length calibration. Extend arm and press trigger to record.");
+                return;
+            }
+
             GameObject selected = selector.GetCurrentTarget();
 
             if (selected != null)
@@ -120,52 +157,141 @@ public class VirtualHandAttach : MonoBehaviour
         if (depthScale == null)
             return;
 
-        // TRADITIONAL GO-GO TECHNIQUE
-        // Virtual hand distance scales exponentially, object follows with proportional offset
-        
-        // Get current real controller distance from HMD (chest)
-        float realHandDistance = Vector3.Distance(controllerTransform.position, Camera.main.transform.position);
-        
-        // Apply Go-Go formula to get virtual hand distance
-        float virtualHandDistance = CalculateGoGoDistance(realHandDistance);
-        
-        // Get direction from HMD to controller (where user is pointing)
-        Vector3 directionFromHMD = (controllerTransform.position - Camera.main.transform.position).normalized;
-        
-        // Calculate virtual hand position in world space
-        Vector3 virtualHandWorldPos = Camera.main.transform.position + directionFromHMD * virtualHandDistance;
-        
-        // Scale the grab offset proportionally to virtual hand distance change
-        // This allows object to come close when hand comes close
-        float distanceRatio = virtualHandDistance / Mathf.Max(initialVirtualHandDistance, 0.001f);
-        Vector3 scaledOffset = grabOffset * distanceRatio;
-        
-        // Object position = virtual hand + scaled offset
-        Vector3 targetPos = virtualHandWorldPos + scaledOffset;
+        // 3D spatial mapping: controller delta moves object delta in X/Y/Z.
+        // Gain follows calibrated range and decreases as object comes closer.
+        float dt = Mathf.Max(Time.deltaTime, 0.0001f);
+
+        Vector3 hmdPosition = Camera.main.transform.position;
+        float previousControllerDistanceFromHMD = Vector3.Distance(previousControllerPosition, hmdPosition);
+        Vector3 controllerDelta = controllerTransform.position - previousControllerPosition;
+        previousControllerPosition = controllerTransform.position;
+
+        float safeThreshold = Mathf.Max(0.001f, depthScale.thresholdDistance);
+        float rangeStart = Mathf.Max(0.001f, directGrabDistance);
+        float rangeEnd = Mathf.Max(rangeStart + 0.001f, safeThreshold);
+
+        float objectDistanceFromHMD = Vector3.Distance(currentlyGrabbedObject.transform.position, hmdPosition);
+        float controllerDistanceFromHMD = Vector3.Distance(controllerTransform.position, hmdPosition);
+        float controllerRadialDelta = controllerDistanceFromHMD - previousControllerDistanceFromHMD;
+        if (controllerRadialDelta > forwardDirectionDeadzone)
+        {
+            isForwardModeLatched = true;
+        }
+        else if (controllerRadialDelta < -forwardDirectionDeadzone)
+        {
+            isForwardModeLatched = false;
+        }
+        bool isMovingForward = isForwardModeLatched;
+
+        // Capture start point when entering forward mode so extension can recover
+        // exactly from the current pulled radius back to the original grab radius.
+        if (isMovingForward && !wasMovingForwardLastFrame)
+        {
+            forwardRecoveryStartRadius = objectDistanceFromHMD;
+            forwardRecoveryStartControllerRadius = controllerDistanceFromHMD;
+        }
+
+        // 0 at direct-grab distance, 1 at calibrated arm length.
+        float rangeT = Mathf.Clamp01((controllerDistanceFromHMD - rangeStart) / (rangeEnd - rangeStart));
+        float nearHand01 = 1f - rangeT;
+
+        float adaptiveDeltaSmoothing = isMovingForward
+            ? forwardDeltaSmoothing
+            : controllerDeltaSmoothing * Mathf.Lerp(1f, nearHandResponsivenessMultiplier, nearHand01);
+        float adaptiveGainSmoothing = isMovingForward
+            ? forwardGainSmoothing
+            : gainSmoothing * Mathf.Lerp(1f, nearHandResponsivenessMultiplier, nearHand01);
+
+        float deltaBlend = 1f - Mathf.Exp(-adaptiveDeltaSmoothing * dt);
+        smoothedControllerDelta = Vector3.Lerp(smoothedControllerDelta, controllerDelta, deltaBlend);
+
+        float rawSpatialGain = isMovingForward
+            ? CalculateForwardSpatialGain(controllerDistanceFromHMD, rangeStart, rangeEnd, initialDistanceToController)
+            : CalculateSpatialGain(objectDistanceFromHMD, depthScale.thresholdDistance);
+        float rangeWeightedGain = isMovingForward ? rawSpatialGain : Mathf.Lerp(1f, rawSpatialGain, rangeT);
+
+        float gainBlend = 1f - Mathf.Exp(-adaptiveGainSmoothing * dt);
+        smoothedSpatialGain = Mathf.Lerp(smoothedSpatialGain, rangeWeightedGain, gainBlend);
+
+        Vector3 scaledDelta = smoothedControllerDelta * smoothedSpatialGain;
+        Vector3 targetPos = currentlyGrabbedObject.transform.position + scaledDelta;
+
+        // In the calibrated range, add convergence toward controller near the hand side.
+        if (!isMovingForward && nearHand01 > 0f)
+        {
+            Vector3 toController = controllerTransform.position - currentlyGrabbedObject.transform.position;
+            targetPos += toController * nearHandConvergenceSpeed * nearHand01 * dt;
+        }
+
+        // Forward recovery is capped to the original grab radius.
+        // This restores the object to where it was grabbed from, but does not push beyond it.
+        if (isMovingForward)
+        {
+            Vector3 radial = targetPos - hmdPosition;
+            float radialDistance = radial.magnitude;
+            if (radialDistance > initialDistanceToController && radialDistance > 0.000001f)
+            {
+                targetPos = hmdPosition + radial.normalized * initialDistanceToController;
+            }
+        }
+
+        // Center-based directional mapping:
+        // keep mapped radius from gain logic, but lock direction to controller direction from HMD.
+        // This balances left/right gain and ensures a closed 360 path returns to the same position.
+        if (controllerDistanceFromHMD > rangeStart)
+        {
+            float mappedRadius = Vector3.Distance(targetPos, hmdPosition);
+
+            // Forward mode uses an explicit recovery curve from the pulled radius
+            // back to the original grab radius as the hand re-extends.
+            if (isMovingForward)
+            {
+                float denom = Mathf.Max(rangeEnd - forwardRecoveryStartControllerRadius, 0.001f);
+                float recoveryT = Mathf.Clamp01((controllerDistanceFromHMD - forwardRecoveryStartControllerRadius) / denom);
+                float forwardRecoveryRadius = Mathf.Lerp(forwardRecoveryStartRadius, initialDistanceToController, recoveryT);
+                mappedRadius = Mathf.Min(forwardRecoveryRadius, initialDistanceToController);
+            }
+
+            Vector3 controllerFromCenter = controllerTransform.position - hmdPosition;
+            if (mappedRadius > 0.000001f && controllerFromCenter.sqrMagnitude > 0.000001f)
+            {
+                Vector3 mappedDirection = centerDirectionOffset * controllerFromCenter.normalized;
+                targetPos = hmdPosition + mappedDirection * mappedRadius;
+            }
+        }
+
+        // Below minimum distance, behave as direct hand grab.
+        if (controllerDistanceFromHMD <= rangeStart)
+        {
+            targetPos = controllerTransform.position;
+            smoothedSpatialGain = 1f;
+        }
+
+        wasMovingForwardLastFrame = isMovingForward;
         
         // Apply rotation based on controller rotation changes
         Quaternion currentControllerRotation = controllerTransform.rotation;
         Quaternion rotationDelta = currentControllerRotation * Quaternion.Inverse(initialControllerRotation);
         Quaternion targetRotation = rotationDelta * initialObjectRotation;
         
-        // Move object toward target using physics
+        // Move object toward target using physics.
+        // Velocity = scaledDelta / dt so the object covers the full amplified distance in one frame.
         Rigidbody rb = currentlyGrabbedObject.GetComponent<Rigidbody>();
         if (rb != null && !rb.isKinematic)
         {
-            // Calculate velocity to reach target
-            Vector3 positionDiff = targetPos - currentlyGrabbedObject.transform.position;
-            rb.linearVelocity = positionDiff / Time.deltaTime;
-            
+            Vector3 desiredVelocity = (targetPos - currentlyGrabbedObject.transform.position) / dt;
+            rb.linearVelocity = Vector3.ClampMagnitude(desiredVelocity, maxLinearSpeed);
+
             // Apply rotation
             currentlyGrabbedObject.transform.rotation = targetRotation;
-            
+
             // Prevent rotation from physics interfering
             rb.angularVelocity = Vector3.zero;
             rb.constraints = RigidbodyConstraints.FreezeRotation;
         }
         else
         {
-            // Fallback: direct position and rotation if no Rigidbody or if kinematic
+            // Input is already smoothed; set position directly so no additional lag.
             currentlyGrabbedObject.transform.position = targetPos;
             currentlyGrabbedObject.transform.rotation = targetRotation;
         }
@@ -180,29 +306,48 @@ public class VirtualHandAttach : MonoBehaviour
         // Match virtual hand rotation to controller rotation
         virtualHand.rotation = controllerTransform.rotation;
         
-        // Hide virtual hand when object reaches the real controller (below threshold)
         float distanceToController = Vector3.Distance(currentlyGrabbedObject.transform.position, controllerTransform.position);
         if (virtualHand != null)
         {
-            bool shouldBeVisible = distanceToController > 0.2f;
-            
-            // Disable all renderers in virtual hand hierarchy
+            // Keep the remote hand visible for the full grab, including near-threshold range.
             Renderer[] allRenderers = virtualHand.GetComponentsInChildren<Renderer>();
             foreach (Renderer rend in allRenderers)
             {
-                rend.enabled = shouldBeVisible;
+                rend.enabled = true;
             }
         }
         
         // Debug log every 30 frames
         if (Time.frameCount % 30 == 0)
         {
-            float gain = virtualHandDistance / Mathf.Max(realHandDistance, 0.001f);
-            float objectDistance = Vector3.Distance(currentlyGrabbedObject.transform.position, Camera.main.transform.position);
-            Debug.Log($"🎯 Go-Go | Real Hand: {realHandDistance:F3}m → Virtual Hand: {virtualHandDistance:F3}m | Gain: {gain:F2}x | Object: {objectDistance:F3}m | To Controller: {distanceToController:F3}m");
+            float objectDistance = Vector3.Distance(currentlyGrabbedObject.transform.position, hmdPosition);
+            Debug.Log($"🎯 Spatial Mapping | Gain: {smoothedSpatialGain:F2}x | ControllerRadius: {controllerDistanceFromHMD:F3}m | Range: [{rangeStart:F3}, {rangeEnd:F3}] | ObjectRadius: {objectDistance:F3}m | To Controller: {distanceToController:F3}m");
         }
     }
-    
+
+    private float CalculateSpatialGain(float objectDistance, float threshold)
+    {
+        // Gain decreases smoothly as object comes closer to threshold.
+        float safeThreshold = Mathf.Max(0.001f, threshold);
+        return Mathf.Max(1f, objectDistance / safeThreshold);
+    }
+
+    private float CalculateForwardSpatialGain(float controllerDistance, float rangeStart, float rangeEnd, float initialObjectDistance)
+    {
+        if (controllerDistance <= rangeStart)
+        {
+            return 1f;
+        }
+
+        float safeThreshold = Mathf.Max(0.001f, rangeEnd);
+        float maxForwardGain = Mathf.Max(1f, initialObjectDistance / safeThreshold);
+        float rangeT = Mathf.Clamp01((controllerDistance - rangeStart) / Mathf.Max(rangeEnd - rangeStart, 0.001f));
+
+        // Forward gain ramps from 1x near the hand to the original object-distance gain at full extension.
+        return Mathf.Lerp(1f, maxForwardGain, rangeT);
+    }
+
+
     private float CalculateGoGoDistance(float realDistance)
     {
         // Safety check: if controller is too close to HMD, use 1:1 mapping
@@ -262,13 +407,44 @@ public class VirtualHandAttach : MonoBehaviour
             }
         }
 
+        SetControllerVisualVisible(true);
+
         isAttached = false;
+        smoothedControllerDelta = Vector3.zero;
+        smoothedSpatialGain = 1f;
+        wasMovingForwardLastFrame = false;
+        forwardRecoveryStartRadius = 0f;
+        forwardRecoveryStartControllerRadius = 0f;
+    }
+
+    /// <summary>
+    /// Public method to force-release the hand and reposition it at the controller (ready for next grab).
+    /// Called when an object is successfully placed and completes a pair.
+    /// </summary>
+    public void ReleaseAndRepositionToController()
+    {
+        ReleaseHand();
+        
+        // Position virtual hand at the controller, hidden until next grab
+        if (virtualHand != null && controllerTransform != null)
+        {
+            virtualHand.position = controllerTransform.position;
+            virtualHand.rotation = controllerTransform.rotation;
+            
+            // Hide renderers — they will be re-enabled when the next grab starts
+            Renderer[] allRenderers = virtualHand.GetComponentsInChildren<Renderer>();
+            foreach (Renderer rend in allRenderers)
+            {
+                rend.enabled = false;
+            }
+        }
     }
 
     private void StartGoGoMode(GameObject objectToGrab)
     {
         currentlyGrabbedObject = objectToGrab;
         isAttached = true;
+        SetControllerVisualVisible(false);
 
         // Notify selector that object is grabbed (disables highlighting)
         if (selector != null)
@@ -286,6 +462,10 @@ public class VirtualHandAttach : MonoBehaviour
 
         // Store starting positions for Go-Go calculation
         controllerPullStartPos = controllerTransform.position;  // Where interaction starts
+        previousControllerPosition = controllerTransform.position;
+        smoothedControllerDelta = Vector3.zero;
+        smoothedSpatialGain = 1f;
+        wasMovingForwardLastFrame = false;
         cubeStartPos = objectToGrab.transform.position;         // Object's starting position
         initialHMDPosition = Camera.main.transform.position;    // HMD position at grab
         
@@ -295,6 +475,8 @@ public class VirtualHandAttach : MonoBehaviour
         
         // Calculate initial distance from object to HMD (for exponential gain)
         initialDistanceToController = Vector3.Distance(cubeStartPos, initialHMDPosition);
+        forwardRecoveryStartRadius = initialDistanceToController;
+        forwardRecoveryStartControllerRadius = Vector3.Distance(controllerPullStartPos, initialHMDPosition);
         
         // Calculate initial virtual hand distance and position using Go-Go formula
         float initialRealDistance = Vector3.Distance(controllerPullStartPos, initialHMDPosition);
@@ -307,6 +489,19 @@ public class VirtualHandAttach : MonoBehaviour
         // Calculate and store grab offset (constant during entire grab)
         grabOffset = cubeStartPos - initialVirtualHandPos;
 
+        // Preserve the initial angular difference between controller direction and object direction
+        // around the HMD center to prevent a jump on the first attached frame.
+        Vector3 initialControllerDir = controllerPullStartPos - initialHMDPosition;
+        Vector3 initialObjectDir = cubeStartPos - initialHMDPosition;
+        if (initialControllerDir.sqrMagnitude > 0.000001f && initialObjectDir.sqrMagnitude > 0.000001f)
+        {
+            centerDirectionOffset = Quaternion.FromToRotation(initialControllerDir.normalized, initialObjectDir.normalized);
+        }
+        else
+        {
+            centerDirectionOffset = Quaternion.identity;
+        }
+
         // Position virtual hand with object
         Vector3 cubePos = objectToGrab.transform.position;
         Vector3 cameraPos = Camera.main.transform.position;
@@ -318,5 +513,42 @@ public class VirtualHandAttach : MonoBehaviour
         Debug.Log($"✋ [TRIGGER] Go-Go mode activated on: {objectToGrab.name}");
         Debug.Log($"   Initial distance to HMD: {initialDistanceToController:F2}m");
         Debug.Log($"   Object will follow hand with exponential gain");
+    }
+
+    private void CacheControllerRenderers()
+    {
+        if (controllerTransform == null)
+        {
+            controllerRenderers = new Renderer[0];
+            return;
+        }
+
+        controllerRenderers = controllerTransform.GetComponentsInChildren<Renderer>(true);
+    }
+
+    private void SetControllerVisualVisible(bool isVisible)
+    {
+        if (!hideControllerWhileAttached)
+        {
+            return;
+        }
+
+        if (controllerRenderers == null || controllerRenderers.Length == 0)
+        {
+            CacheControllerRenderers();
+        }
+
+        if (controllerRenderers == null)
+        {
+            return;
+        }
+
+        foreach (Renderer controllerRenderer in controllerRenderers)
+        {
+            if (controllerRenderer != null)
+            {
+                controllerRenderer.enabled = isVisible;
+            }
+        }
     }
 }

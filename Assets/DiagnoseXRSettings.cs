@@ -60,7 +60,7 @@ public class DiagnoseXRSettings : MonoBehaviour
         }
         
         // Check XR Interaction Manager
-        XRInteractionManager interactionManager = FindObjectOfType<XRInteractionManager>();
+        XRInteractionManager interactionManager = Object.FindFirstObjectByType<XRInteractionManager>();
         if (interactionManager != null)
         {
             Debug.Log($"✅ XR Interaction Manager found and active");
