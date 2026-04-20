@@ -1,5 +1,7 @@
 ﻿using UnityEngine;
 using UnityEngine.InputSystem;
+using UnityEngine.SceneManagement;
+using UnityEngine.XR;
 
 public class VirtualHandAttach : MonoBehaviour
 {
@@ -63,6 +65,22 @@ public class VirtualHandAttach : MonoBehaviour
     public GameObject GetCurrentObject() { return currentlyGrabbedObject; }
     public RaycastObjectSelector GetSelector() { return selector; }
 
+    private InputAction _returnToUIAction;
+
+    // Grip-to-UI: initialized true so first frame is never treated as a new press (carryover guard)
+    private bool _prevGripForReturn = true;
+
+    // Returns true on the rising edge of the right-grip button using the XR legacy API (most reliable on Oculus).
+    private bool GripReturnPressed()
+    {
+        UnityEngine.XR.InputDevice right = InputDevices.GetDeviceAtXRNode(XRNode.RightHand);
+        bool gripNow = false;
+        if (right.isValid) right.TryGetFeatureValue(UnityEngine.XR.CommonUsages.gripButton, out gripNow);
+        bool pressed = gripNow && !_prevGripForReturn;
+        _prevGripForReturn = gripNow;
+        return pressed;
+    }
+
     void Start()
     {
         if (virtualHand == null)
@@ -89,6 +107,12 @@ public class VirtualHandAttach : MonoBehaviour
 
     void Update()
     {
+        if (GripReturnPressed())
+        {
+            SceneManager.LoadScene("UI");
+            return;
+        }
+
         if (virtualHand == null || selector == null)
             return;
 

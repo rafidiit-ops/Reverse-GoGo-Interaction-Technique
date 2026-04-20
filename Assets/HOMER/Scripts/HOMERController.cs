@@ -1,5 +1,7 @@
 using UnityEngine;
 using UnityEngine.InputSystem;
+using UnityEngine.SceneManagement;
+using UnityEngine.XR;
 
 /// <summary>
 /// Standalone HOMER interaction controller for HOMERStarterScene.
@@ -37,6 +39,11 @@ public class HOMERController : MonoBehaviour
     [Tooltip("XRI RightHand / Grip — held to clutch (pause tracking and re-centre).")]
     public InputActionProperty gripAction;
 
+    private InputAction _returnToUIAction;
+
+    // Grip-to-UI: initialized true so first frame is never treated as a new press (carryover guard)
+    private bool _prevGripForReturn = true;
+
     [Header("Selection")]
     [Tooltip("Physics layers that can be grabbed.")]
     public LayerMask grabbableLayers = Physics.DefaultRaycastLayers;
@@ -65,6 +72,10 @@ public class HOMERController : MonoBehaviour
 
     [Tooltip("Upper limit on the ratio-based HOMER scale (objectDist/controllerDist).")]
     public float maxDistanceScale = 15f;
+
+    [Tooltip("Maximum physical hand movement (metres) allowed from the grab-anchor before the object movement is clamped. "
+           + "The actual object displacement cap = maxHandReach × scaleFactor, so it varies naturally with each grab. 0 = no cap.")]
+    public float maxHandReach = 0.5f;
 
     [Tooltip("Keep object rotation fixed during grab. Disable this to let the object follow hand/controller rotation.")]
     public bool keepInitialObjectRotation = false;
@@ -100,6 +111,11 @@ public class HOMERController : MonoBehaviour
     // -----------------------------------------------------------------------
     // Runtime state
     // -----------------------------------------------------------------------
+
+    // Enforce conflicting-script disable for the first N frames after Start,
+    // so any script that runs after us (e.g. GoGoModeToggle) cannot re-enable
+    // VirtualHandAttach or other Reverse-GoGo scripts.
+    private int _startupFramesLeft = 10;
 
     private GameObject _heldObject;
     private Rigidbody _heldRigidbody;
@@ -399,6 +415,20 @@ public class HOMERController : MonoBehaviour
 
     private void Update()
     {
+        if (GripReturnPressed())
+        {
+            SceneManager.LoadScene("UI");
+            return;
+        }
+
+        // Re-enforce on first few frames so nothing can re-enable conflicting scripts.
+        if (_startupFramesLeft > 0)
+        {
+            _startupFramesLeft--;
+            if (disableConflictingScripts)
+                DisableConflictingTechniqueScripts();
+        }
+
         Transform tracking = GetTrackingTransform();
         if (tracking == null)
         {
@@ -712,7 +742,18 @@ public class HOMERController : MonoBehaviour
         // P_object = P_object0 + (P_hand - P_hand0) * scaleFactor
         Vector3 controllerDelta = movementSource.position - _controllerAnchorPos;
         Vector3 objectDelta = controllerDelta * _distanceScale;
-        Vector3 targetObjectPos = _objectAnchorPos + controllerDelta * _distanceScale;
+        Vector3 targetObjectPos = _objectAnchorPos + objectDelta;
+
+        // Clamp to formula-derived limit: hand cannot travel further than maxHandReach from anchor,
+        // so the object cannot travel further than maxHandReach * _distanceScale from its anchor.
+        // This keeps the cap proportional to every individual grab, unlike a fixed distance cap.
+        if (maxHandReach > 0f)
+        {
+            float effectiveMax = maxHandReach * _distanceScale;
+            Vector3 displacement = targetObjectPos - _objectAnchorPos;
+            if (displacement.magnitude > effectiveMax)
+                targetObjectPos = _objectAnchorPos + displacement.normalized * effectiveMax;
+        }
 
         if (debugMode)
         {
@@ -917,6 +958,17 @@ public class HOMERController : MonoBehaviour
             gripAction.action.actionMap?.Enable();
             gripAction.action.Enable();
         }
+    }
+
+    // Returns true on the rising edge of the right-grip button using the XR legacy API (most reliable on Oculus).
+    private bool GripReturnPressed()
+    {
+        UnityEngine.XR.InputDevice right = InputDevices.GetDeviceAtXRNode(XRNode.RightHand);
+        bool gripNow = false;
+        if (right.isValid) right.TryGetFeatureValue(UnityEngine.XR.CommonUsages.gripButton, out gripNow);
+        bool pressed = gripNow && !_prevGripForReturn;
+        _prevGripForReturn = gripNow;
+        return pressed;
     }
 
     private void OnDestroy()

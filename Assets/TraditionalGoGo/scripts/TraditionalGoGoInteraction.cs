@@ -1,5 +1,7 @@
 using UnityEngine;
 using UnityEngine.InputSystem;
+using UnityEngine.SceneManagement;
+using UnityEngine.XR;
 
 // Version: 1.0 - Traditional GoGo Implementation
 
@@ -105,6 +107,11 @@ public class TraditionalGoGoInteraction : MonoBehaviour
     public GameObject GetTouchingObject() { return touchingObject; }
     public Vector3 GetVirtualHandPosition() { return CalculateVirtualHandPosition(); }
 
+    private InputAction _returnToUIAction;
+
+    // Grip-to-UI: initialized true so first frame is never treated as a new press (carryover guard)
+    private bool _prevGripForReturn = true;
+
     void Start()
     {
         // Auto-find HMD if not assigned
@@ -169,8 +176,25 @@ public class TraditionalGoGoInteraction : MonoBehaviour
         Debug.Log("✅ Traditional GoGo Interaction initialized");
     }
 
+    // Returns true on the rising edge of the right-grip button using the XR legacy API (most reliable on Oculus).
+    private bool GripReturnPressed()
+    {
+        UnityEngine.XR.InputDevice right = InputDevices.GetDeviceAtXRNode(XRNode.RightHand);
+        bool gripNow = false;
+        if (right.isValid) right.TryGetFeatureValue(UnityEngine.XR.CommonUsages.gripButton, out gripNow);
+        bool pressed = gripNow && !_prevGripForReturn;
+        _prevGripForReturn = gripNow;
+        return pressed;
+    }
+
     void Update()
     {
+        if (GripReturnPressed())
+        {
+            SceneManager.LoadScene("UI");
+            return;
+        }
+
         if (virtualHand == null || controllerTransform == null || hmdTransform == null)
         {
             if (Time.frameCount % 120 == 0) // Log every 2 seconds

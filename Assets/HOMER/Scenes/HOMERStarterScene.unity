@@ -2363,12 +2363,22 @@ MonoBehaviour:
   grabbableLayers:
     serializedVersion: 2
     m_Bits: 123
+  forceSelectorToGrabbableLayers: 1
+  preferredGrabbableLayerName: Interactable
+  autoUsePreferredLayerWhenMaskIsDefault: 1
+  strictPreferredLayerOnly: 1
   selectionRayLength: 0
   raycastSelector: {fileID: 1593756029}
   minControllerDistance: 0.05
-  maxDistanceScale: 15
+  maxDistanceScale: 5
+  maxHandReach: 0.5
+  keepInitialObjectRotation: 0
   grabTransitionDuration: 0.15
   enableClutch: 1
+  hideControllerVisualsWhileHolding: 1
+  shootRemoteHandOnGrab: 1
+  attachRemoteHandOnSurface: 1
+  remoteHandSurfaceOffset: 0.015
   disableConflictingScripts: 1
   debugMode: 1
 --- !u!4 &1907912696

@@ -5,7 +5,7 @@ using UnityEngine.XR;
 using System.Collections.Generic;
 
 /// <summary>
-/// Creates a small runtime UI that lets users switch between the two study scenes.
+/// Creates a small runtime UI that lets users switch between study scenes.
 /// It is auto-spawned and persisted across scene loads.
 /// </summary>
 public class SceneToggleRuntimeUI : MonoBehaviour
@@ -13,13 +13,20 @@ public class SceneToggleRuntimeUI : MonoBehaviour
     private static bool RuntimeMenuEnabled = false;
     private const string TraditionalSceneName = "TraditionalGoGoSampleScene";
     private const string ReverseSceneName = "ReverseGoGo SampleScene";
+    private const string HomerSceneName = "HOMERStarterScene";
+    private const float MaxControllerRayDistance = 3f;
+    private const float RayHitVisualOffset = 0.01f;
 
     private static SceneToggleRuntimeUI instance;
 
     private Canvas menuCanvas;
     private RectTransform panelRect;
+    private LineRenderer gazeLine;
+    private Transform rightControllerRayTransform;
+    private Transform leftControllerRayTransform;
     private Button traditionalButton;
     private Button reverseButton;
+    private Button homerButton;
     private Button exitButton;
     private Button[] optionButtons;
     private Text[] optionLabels;
@@ -29,10 +36,11 @@ public class SceneToggleRuntimeUI : MonoBehaviour
 
     private bool isMenuVisible = false;
     private bool previousAPressed;
-    private bool previousBPressed;
+    private bool previousGripPressed;
     private bool previousTriggerPressed;
     private bool previousNavUp;
     private bool previousNavDown;
+    private int menuOpenedFrame = -1;
 
     private readonly Color normalButtonColor = new Color(0.18f, 0.18f, 0.18f, 0.95f);
     private readonly Color selectedButtonColor = new Color(0.12f, 0.4f, 0.18f, 0.98f);
@@ -42,12 +50,15 @@ public class SceneToggleRuntimeUI : MonoBehaviour
     // Scripts that should be suspended while the menu is visible.
     private static readonly HashSet<string> PausedBehaviourTypeNames = new HashSet<string>
     {
+        "HandCalibrationDepthScale",
         "VirtualHandAttach",
         "TraditionalGoGoInteraction",
         "RaycastObjectSelector",
         "ReverseGoGoGrab",
         "XRReverseGoGo",
-        "GoGoModeToggle"
+        "GoGoModeToggle",
+        "HOMERController",
+        "HOMERInteraction"
     };
 
     private readonly List<Behaviour> disabledForMenu = new List<Behaviour>();
@@ -96,6 +107,8 @@ public class SceneToggleRuntimeUI : MonoBehaviour
 
     private void OnSceneLoaded(Scene scene, LoadSceneMode mode)
     {
+        rightControllerRayTransform = null;
+        leftControllerRayTransform = null;
         disabledForMenu.Clear();
         RefreshButtonState();
         if (isMenuVisible)
@@ -109,23 +122,26 @@ public class SceneToggleRuntimeUI : MonoBehaviour
     {
         ReadControllerInput(
             out bool aPressedThisFrame,
-            out bool bPressedThisFrame,
+            out bool gripPressedThisFrame,
             out bool triggerPressedThisFrame,
             out bool navUpPressedThisFrame,
             out bool navDownPressedThisFrame);
 
-        if (!isMenuVisible && (aPressedThisFrame || bPressedThisFrame || Input.GetKeyDown(KeyCode.M)))
+        if (!isMenuVisible && (gripPressedThisFrame || Input.GetKeyDown(KeyCode.M)))
         {
             ShowMenu();
         }
 
         if (isMenuVisible)
         {
-            if (triggerPressedThisFrame || Input.GetKeyDown(KeyCode.Escape))
+            bool canCloseThisFrame = Time.frameCount > menuOpenedFrame;
+            if ((canCloseThisFrame && gripPressedThisFrame) || Input.GetKeyDown(KeyCode.Escape))
             {
                 HideMenu();
                 return;
             }
+
+            UpdateControllerRaySelection();
 
             if (navUpPressedThisFrame || Input.GetKeyDown(KeyCode.UpArrow) || Input.GetKeyDown(KeyCode.W))
             {
@@ -137,7 +153,7 @@ public class SceneToggleRuntimeUI : MonoBehaviour
                 MoveSelection(1);
             }
 
-            if (aPressedThisFrame || Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.Space))
+            if (triggerPressedThisFrame || aPressedThisFrame || Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.Space))
             {
                 ActivateSelectedOption();
             }
@@ -159,6 +175,8 @@ public class SceneToggleRuntimeUI : MonoBehaviour
 
         canvasObject.AddComponent<CanvasScaler>();
         canvasObject.AddComponent<GraphicRaycaster>();
+
+        CreateGazeLine(canvasObject.transform);
 
         GameObject panelObject = CreateUiObject("Panel", canvasObject.transform);
         Image panelImage = panelObject.AddComponent<Image>();
@@ -187,19 +205,21 @@ public class SceneToggleRuntimeUI : MonoBehaviour
 
         traditionalButton = CreateButton(panelObject.transform, "Traditional GoGo", new Vector2(12f, -58f));
         reverseButton = CreateButton(panelObject.transform, "Reverse GoGo", new Vector2(12f, -114f));
-        exitButton = CreateButton(panelObject.transform, "Exit", new Vector2(12f, -170f));
-        optionButtons = new[] { traditionalButton, reverseButton, exitButton };
+        homerButton = CreateButton(panelObject.transform, "HOMER", new Vector2(12f, -170f));
+        exitButton = CreateButton(panelObject.transform, "Exit", new Vector2(12f, -226f));
+        optionButtons = new[] { traditionalButton, reverseButton, homerButton, exitButton };
         optionLabels = new[]
         {
             traditionalButton.GetComponentInChildren<Text>(),
             reverseButton.GetComponentInChildren<Text>(),
+            homerButton.GetComponentInChildren<Text>(),
             exitButton.GetComponentInChildren<Text>()
         };
-        baseOptionLabels = new[] { "Traditional GoGo", "Reverse GoGo", "Exit" };
+        baseOptionLabels = new[] { "Traditional GoGo", "Reverse GoGo", "HOMER", "Exit" };
 
         GameObject hintObj = CreateUiObject("Hint", panelObject.transform);
         hintText = hintObj.AddComponent<Text>();
-        hintText.text = "Thumbstick Up/Down: navigate | A: select | Trigger: close menu | B: reopen menu";
+        hintText.text = "Grab (Grip): open/close | Point controller ray + Trigger: select";
         hintText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
         hintText.alignment = TextAnchor.MiddleCenter;
         hintText.color = new Color(0.9f, 0.9f, 0.9f, 1f);
@@ -208,19 +228,50 @@ public class SceneToggleRuntimeUI : MonoBehaviour
         hintRect.anchorMin = new Vector2(0f, 1f);
         hintRect.anchorMax = new Vector2(0f, 1f);
         hintRect.pivot = new Vector2(0f, 1f);
-        hintRect.anchoredPosition = new Vector2(12f, -224f);
+        hintRect.anchoredPosition = new Vector2(12f, -280f);
         hintRect.sizeDelta = new Vector2(436f, 36f);
 
         traditionalButton.onClick.AddListener(() => SwitchToTechnique(TraditionalSceneName));
         reverseButton.onClick.AddListener(() => SwitchToTechnique(ReverseSceneName));
+        homerButton.onClick.AddListener(() => SwitchToTechnique(HomerSceneName));
         exitButton.onClick.AddListener(ExitApplication);
 
         RectTransform canvasRect = canvasObject.GetComponent<RectTransform>();
-        canvasRect.sizeDelta = new Vector2(460f, 270f);
-        panelRect.sizeDelta = new Vector2(460f, 270f);
+        canvasRect.sizeDelta = new Vector2(460f, 326f);
+        panelRect.sizeDelta = new Vector2(460f, 326f);
 
         RefreshButtonState();
         ShowMenu();
+    }
+
+    private void CreateGazeLine(Transform parent)
+    {
+        GameObject lineObject = new GameObject("GazeLine");
+        lineObject.transform.SetParent(parent, false);
+
+        gazeLine = lineObject.AddComponent<LineRenderer>();
+        gazeLine.positionCount = 2;
+        gazeLine.useWorldSpace = true;
+        gazeLine.startWidth = 0.005f;
+        gazeLine.endWidth = 0.0025f;
+        gazeLine.numCapVertices = 4;
+        gazeLine.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+        gazeLine.receiveShadows = false;
+        gazeLine.textureMode = LineTextureMode.Stretch;
+
+        Shader lineShader = Shader.Find("Sprites/Default");
+        if (lineShader == null)
+        {
+            lineShader = Shader.Find("Unlit/Color");
+        }
+
+        Material lineMaterial = new Material(lineShader);
+        lineMaterial.color = new Color(1f, 0.95f, 0.2f, 0.95f);
+        gazeLine.material = lineMaterial;
+
+        gazeLine.startColor = new Color(1f, 1f, 1f, 0.95f);
+        gazeLine.endColor = new Color(1f, 0.9f, 0.2f, 0.95f);
+        gazeLine.enabled = false;
     }
 
     private static GameObject CreateUiObject(string name, Transform parent)
@@ -234,6 +285,17 @@ public class SceneToggleRuntimeUI : MonoBehaviour
     private static Button CreateButton(Transform parent, string label, Vector2 anchoredPosition)
     {
         GameObject buttonObject = CreateUiObject(label + "Button", parent);
+
+        int menuButtonLayer = LayerMask.NameToLayer("MenuButton");
+        if (menuButtonLayer < 0)
+        {
+            menuButtonLayer = LayerMask.NameToLayer("UI");
+        }
+
+        if (menuButtonLayer >= 0)
+        {
+            buttonObject.layer = menuButtonLayer;
+        }
 
         Image buttonImage = buttonObject.AddComponent<Image>();
         buttonImage.color = new Color(0.18f, 0.18f, 0.18f, 0.95f);
@@ -252,6 +314,10 @@ public class SceneToggleRuntimeUI : MonoBehaviour
         buttonRect.pivot = new Vector2(0f, 1f);
         buttonRect.anchoredPosition = anchoredPosition;
         buttonRect.sizeDelta = new Vector2(436f, 48f);
+
+        BoxCollider buttonCollider = buttonObject.AddComponent<BoxCollider>();
+        buttonCollider.size = new Vector3(buttonRect.sizeDelta.x, buttonRect.sizeDelta.y, 2f);
+        buttonCollider.center = Vector3.zero;
 
         GameObject textObject = CreateUiObject("Text", buttonObject.transform);
         Text text = textObject.AddComponent<Text>();
@@ -280,6 +346,160 @@ public class SceneToggleRuntimeUI : MonoBehaviour
         DontDestroyOnLoad(eventSystem);
     }
 
+    private void UpdateControllerRaySelection()
+    {
+        if (optionButtons == null || optionButtons.Length == 0)
+            return;
+
+        if (!TryGetControllerRay(out Ray controllerRay))
+        {
+            SetGazeLineVisible(false);
+            return;
+        }
+
+        int menuButtonLayer = LayerMask.NameToLayer("MenuButton");
+        if (menuButtonLayer < 0)
+        {
+            menuButtonLayer = LayerMask.NameToLayer("UI");
+        }
+
+        int mask = menuButtonLayer >= 0 ? (1 << menuButtonLayer) : Physics.DefaultRaycastLayers;
+
+        if (!Physics.Raycast(controllerRay, out RaycastHit hit, MaxControllerRayDistance, mask, QueryTriggerInteraction.Collide))
+        {
+            SetGazeLineVisible(true);
+            SetGazeLine(controllerRay.origin, controllerRay.origin + controllerRay.direction * MaxControllerRayDistance);
+            return;
+        }
+
+        SetGazeLineVisible(true);
+        Vector3 lineEnd = hit.point - controllerRay.direction * RayHitVisualOffset;
+        SetGazeLine(controllerRay.origin, lineEnd);
+
+        for (int i = 0; i < optionButtons.Length; i++)
+        {
+            Button button = optionButtons[i];
+            if (button == null || !button.interactable)
+                continue;
+
+            Transform hitTransform = hit.collider != null ? hit.collider.transform : null;
+            if (hitTransform == button.transform || hitTransform.IsChildOf(button.transform))
+            {
+                if (i != selectedOption)
+                {
+                    SetSelectedOption(i);
+                }
+
+                return;
+            }
+        }
+    }
+
+    private void SetGazeLineVisible(bool visible)
+    {
+        if (gazeLine != null)
+        {
+            gazeLine.enabled = visible && isMenuVisible;
+        }
+    }
+
+    private void SetGazeLine(Vector3 start, Vector3 end)
+    {
+        if (gazeLine == null)
+            return;
+
+        gazeLine.SetPosition(0, start);
+        gazeLine.SetPosition(1, end);
+    }
+
+    private bool TryGetControllerRay(out Ray controllerRay)
+    {
+        EnsureControllerRayTransforms();
+
+        if (rightControllerRayTransform != null)
+        {
+            controllerRay = new Ray(rightControllerRayTransform.position, rightControllerRayTransform.forward);
+            return true;
+        }
+
+        if (leftControllerRayTransform != null)
+        {
+            controllerRay = new Ray(leftControllerRayTransform.position, leftControllerRayTransform.forward);
+            return true;
+        }
+
+        InputDevice rightHand = InputDevices.GetDeviceAtXRNode(XRNode.RightHand);
+        if (rightHand.isValid
+            && rightHand.TryGetFeatureValue(CommonUsages.devicePosition, out Vector3 rightPos)
+            && rightHand.TryGetFeatureValue(CommonUsages.deviceRotation, out Quaternion rightRot))
+        {
+            controllerRay = new Ray(rightPos, rightRot * Vector3.forward);
+            return true;
+        }
+
+        InputDevice leftHand = InputDevices.GetDeviceAtXRNode(XRNode.LeftHand);
+        if (leftHand.isValid
+            && leftHand.TryGetFeatureValue(CommonUsages.devicePosition, out Vector3 leftPos)
+            && leftHand.TryGetFeatureValue(CommonUsages.deviceRotation, out Quaternion leftRot))
+        {
+            controllerRay = new Ray(leftPos, leftRot * Vector3.forward);
+            return true;
+        }
+
+        Camera cam = Camera.main;
+        if (cam != null)
+        {
+            controllerRay = new Ray(cam.transform.position, cam.transform.forward);
+            return true;
+        }
+
+        controllerRay = default;
+        return false;
+    }
+
+    private void EnsureControllerRayTransforms()
+    {
+        if (rightControllerRayTransform == null)
+        {
+            rightControllerRayTransform = FindControllerTransform("RightHand Controller", "RightHandController", "Right Hand", "RightHand");
+        }
+
+        if (leftControllerRayTransform == null)
+        {
+            leftControllerRayTransform = FindControllerTransform("LeftHand Controller", "LeftHandController", "Left Hand", "LeftHand");
+        }
+    }
+
+    private static Transform FindControllerTransform(params string[] candidateNames)
+    {
+        for (int i = 0; i < candidateNames.Length; i++)
+        {
+            GameObject direct = GameObject.Find(candidateNames[i]);
+            if (direct != null)
+            {
+                return direct.transform;
+            }
+        }
+
+        Transform[] allTransforms = FindObjectsByType<Transform>(FindObjectsSortMode.None);
+        for (int i = 0; i < allTransforms.Length; i++)
+        {
+            Transform t = allTransforms[i];
+            if (t == null)
+                continue;
+
+            for (int n = 0; n < candidateNames.Length; n++)
+            {
+                if (string.Equals(t.name, candidateNames[n], System.StringComparison.OrdinalIgnoreCase))
+                {
+                    return t;
+                }
+            }
+        }
+
+        return null;
+    }
+
     private void SwitchToTechnique(string sceneName)
     {
         HideMenu();
@@ -299,6 +519,7 @@ public class SceneToggleRuntimeUI : MonoBehaviour
             return;
 
         isMenuVisible = true;
+        menuOpenedFrame = Time.frameCount;
         Time.timeScale = 0f;
         AudioListener.pause = true;
         FreezeGameplayBehaviours();
@@ -307,6 +528,7 @@ public class SceneToggleRuntimeUI : MonoBehaviour
             menuCanvas.enabled = true;
             RepositionMenuInFrontOfCamera();
         }
+        SetGazeLineVisible(true);
         RefreshButtonState();
         SetSelectedOption(GetDefaultSelectedOption());
     }
@@ -324,6 +546,7 @@ public class SceneToggleRuntimeUI : MonoBehaviour
         {
             menuCanvas.enabled = false;
         }
+        SetGazeLineVisible(false);
     }
 
     private void FreezeGameplayBehaviours()
@@ -384,13 +607,13 @@ public class SceneToggleRuntimeUI : MonoBehaviour
 
     private void ReadControllerInput(
         out bool aPressedThisFrame,
-        out bool bPressedThisFrame,
+        out bool gripPressedThisFrame,
         out bool triggerPressedThisFrame,
         out bool navUpPressedThisFrame,
         out bool navDownPressedThisFrame)
     {
         bool aPressed = false;
-        bool bPressed = false;
+        bool gripPressed = false;
         bool triggerPressed = false;
         bool navUpPressed = false;
         bool navDownPressed = false;
@@ -399,7 +622,8 @@ public class SceneToggleRuntimeUI : MonoBehaviour
         if (rightHand.isValid)
         {
             rightHand.TryGetFeatureValue(CommonUsages.primaryButton, out aPressed);
-            rightHand.TryGetFeatureValue(CommonUsages.secondaryButton, out bPressed);
+            rightHand.TryGetFeatureValue(CommonUsages.gripButton, out bool rightGripPressed);
+            gripPressed |= rightGripPressed;
             rightHand.TryGetFeatureValue(CommonUsages.triggerButton, out triggerPressed);
 
             Vector2 axis;
@@ -410,14 +634,21 @@ public class SceneToggleRuntimeUI : MonoBehaviour
             }
         }
 
+        InputDevice leftHand = InputDevices.GetDeviceAtXRNode(XRNode.LeftHand);
+        if (leftHand.isValid)
+        {
+            leftHand.TryGetFeatureValue(CommonUsages.gripButton, out bool leftGripPressed);
+            gripPressed |= leftGripPressed;
+        }
+
         aPressedThisFrame = aPressed && !previousAPressed;
-        bPressedThisFrame = bPressed && !previousBPressed;
+        gripPressedThisFrame = gripPressed && !previousGripPressed;
         triggerPressedThisFrame = triggerPressed && !previousTriggerPressed;
         navUpPressedThisFrame = navUpPressed && !previousNavUp;
         navDownPressedThisFrame = navDownPressed && !previousNavDown;
 
         previousAPressed = aPressed;
-        previousBPressed = bPressed;
+        previousGripPressed = gripPressed;
         previousTriggerPressed = triggerPressed;
         previousNavUp = navUpPressed;
         previousNavDown = navDownPressed;
@@ -430,6 +661,8 @@ public class SceneToggleRuntimeUI : MonoBehaviour
             return 0;
         if (active == ReverseSceneName)
             return 1;
+        if (active == HomerSceneName)
+            return 2;
         return 0;
     }
 
@@ -512,12 +745,13 @@ public class SceneToggleRuntimeUI : MonoBehaviour
 
     private void RefreshButtonState()
     {
-        if (traditionalButton == null || reverseButton == null)
+        if (traditionalButton == null || reverseButton == null || homerButton == null)
             return;
 
         string active = SceneManager.GetActiveScene().name;
         traditionalButton.interactable = active != TraditionalSceneName;
         reverseButton.interactable = active != ReverseSceneName;
+        homerButton.interactable = active != HomerSceneName;
         SetSelectedOption(GetDefaultSelectedOption());
     }
 }
