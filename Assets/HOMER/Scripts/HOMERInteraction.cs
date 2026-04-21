@@ -38,6 +38,10 @@ public class HOMERInteraction : MonoBehaviour
     private Quaternion objectGrabRotation;
     private float distanceScale = 1f;
 
+    // 1:1 incremental tracking
+    private Vector3 _prevControllerPos;
+    private Quaternion _prevControllerRot;
+
     private bool isTransitioning;
     private float transitionElapsed;
     private Vector3 transitionStartHandPosition;
@@ -236,14 +240,9 @@ public class HOMERInteraction : MonoBehaviour
             return;
         }
 
-        // Re-anchor HOMER mapping at the new controller pose without moving the object.
-        Vector3 mappedHandPosition = currentlyGrabbedObject.transform.position - grabPositionOffset;
-        Quaternion mappedHandRotation = currentlyGrabbedObject.transform.rotation * Quaternion.Inverse(grabRotationOffset);
-
-        controllerGrabPosition = controllerTransform.position;
-        controllerGrabRotation = controllerTransform.rotation;
-        objectGrabPosition = mappedHandPosition;
-        objectGrabRotation = mappedHandRotation;
+        // Reset incremental tracking anchor so movement resumes cleanly after clutch.
+        _prevControllerPos = controllerTransform.position;
+        _prevControllerRot = controllerTransform.rotation;
 
         isTransitioning = false;
         isClutching = false;
@@ -265,15 +264,10 @@ public class HOMERInteraction : MonoBehaviour
         objectGrabPosition = currentlyGrabbedObject.transform.position;
         objectGrabRotation = currentlyGrabbedObject.transform.rotation;
 
-        float controllerDistance = hmdTransform != null
-            ? Vector3.Distance(hmdTransform.position, controllerGrabPosition)
-            : minControllerDistanceForScaling;
-        controllerDistance = Mathf.Max(minControllerDistanceForScaling, controllerDistance);
-
-        float objectDistance = hmdTransform != null
-            ? Vector3.Distance(hmdTransform.position, objectGrabPosition)
-            : controllerDistance;
-        distanceScale = Mathf.Clamp(objectDistance / controllerDistance, 1f, Mathf.Max(1f, maxDistanceScale));
+        // 1:1 mapping — physical hand movement equals object movement.
+        distanceScale = 1f;
+        _prevControllerPos = controllerTransform.position;
+        _prevControllerRot = controllerTransform.rotation;
 
         // At grab begin, mapped hand equals object position. Keep offset for robustness.
         grabPositionOffset = currentlyGrabbedObject.transform.position - objectGrabPosition;
@@ -314,42 +308,23 @@ public class HOMERInteraction : MonoBehaviour
 
     private void ApplyMovement(float deltaTime)
     {
-        // HOMER mapping: controller deltas are scaled by initial object/hand distance ratio.
-        Vector3 controllerDelta = controllerTransform.position - controllerGrabPosition;
-        Vector3 mappedHandPosition = objectGrabPosition + controllerDelta * distanceScale;
+        // 1:1 incremental mapping: object moves by exactly the same world-space
+        // delta as the physical controller moved this frame.
+        Vector3 frameDelta = controllerTransform.position - _prevControllerPos;
+        Vector3 targetPosition = currentlyGrabbedObject.transform.position + frameDelta;
+        _prevControllerPos = controllerTransform.position;
 
-        Quaternion controllerDeltaRotation = controllerTransform.rotation * Quaternion.Inverse(controllerGrabRotation);
-        Quaternion mappedHandRotation = controllerDeltaRotation * objectGrabRotation;
-
-        float blend = 1f;
-        if (isTransitioning)
-        {
-            transitionElapsed += Mathf.Max(0f, deltaTime);
-            blend = Mathf.Clamp01(transitionElapsed / Mathf.Max(0.0001f, transitionDuration));
-            blend = blend * blend * (3f - 2f * blend); // SmoothStep
-            if (blend >= 0.9999f)
-            {
-                isTransitioning = false;
-            }
-        }
-
-        Vector3 handPosition = isTransitioning
-            ? Vector3.Lerp(transitionStartHandPosition, mappedHandPosition, blend)
-            : mappedHandPosition;
-        Quaternion handRotation = isTransitioning
-            ? Quaternion.Slerp(transitionStartHandRotation, mappedHandRotation, blend)
-            : mappedHandRotation;
-
-        Vector3 targetPosition = handPosition + grabPositionOffset;
-        Quaternion targetRotation = handRotation * grabRotationOffset;
+        Quaternion frameRotDelta = controllerTransform.rotation * Quaternion.Inverse(_prevControllerRot);
+        Quaternion targetRotation = frameRotDelta * currentlyGrabbedObject.transform.rotation;
+        _prevControllerRot = controllerTransform.rotation;
 
         currentlyGrabbedObject.transform.position = targetPosition;
         currentlyGrabbedObject.transform.rotation = targetRotation;
 
         if (virtualHand != null)
         {
-            virtualHand.position = handPosition;
-            virtualHand.rotation = handRotation;
+            virtualHand.position = targetPosition;
+            virtualHand.rotation = targetRotation;
         }
     }
 

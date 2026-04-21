@@ -137,7 +137,11 @@ public class HOMERController : MonoBehaviour
     // Cache the last highlighted target so exec-order gaps don't cause a missed grab.
     private GameObject _lastHighlightedTarget;
 
-    // HOMER mapping anchors
+    // HOMER 1:1 mapping: frame-by-frame delta tracking
+    private Vector3 _prevControllerPos;
+    private Quaternion _prevControllerRot;
+
+    // Still needed for clutch re-anchor and transition start
     private Vector3 _controllerAnchorPos;
     private Quaternion _controllerAnchorRot;
     private Vector3 _objectAnchorPos;
@@ -595,21 +599,12 @@ public class HOMERController : MonoBehaviour
 
         CacheSurfaceAttachData(tracking);
 
-        // 3. Compute HOMER distance scale.
-        float controllerDist = hmdTransform != null
-            ? Vector3.Distance(hmdTransform.position, _controllerAnchorPos)
-            : minControllerDistance;
-        controllerDist = Mathf.Max(minControllerDistance, controllerDist);
+        // 3. 1:1 mapping — physical hand movement equals object movement.
+        _distanceScale = 1f;
+        _prevControllerPos = tracking.position;
+        _prevControllerRot = tracking.rotation;
 
-        float objectDist = hmdTransform != null
-            ? Vector3.Distance(hmdTransform.position, _objectAnchorPos)
-            : controllerDist;
-
-        // HOMER ratio mapping: scale = objectDist / controllerDist.
-        // Example: 5m object distance / 0.5m hand distance = 10x gain.
-        _distanceScale = Mathf.Clamp(objectDist / controllerDist, 1f, Mathf.Max(1f, maxDistanceScale));
-
-        Debug.Log($"[HOMER Grab] hand={controllerDist:F3}m | object={objectDist:F3}m | scale={_distanceScale:F3} | objMove=handMove*scale");
+        Debug.Log($"[HOMER Grab] 1:1 mapping active | object={_objectAnchorPos} | controller={tracking.position}");
 
         // 4. Disable physics while held.
         _heldRigidbody = _heldObject.GetComponent<Rigidbody>();
@@ -705,6 +700,8 @@ public class HOMERController : MonoBehaviour
         _controllerAnchorRot = tracking.rotation;
         _objectAnchorPos = _heldObject.transform.position;
         _objectAnchorRot = _heldObject.transform.rotation;
+        _prevControllerPos = tracking.position;
+        _prevControllerRot = tracking.rotation;
 
         _isTransitioning = false;
         _isClutching = false;
@@ -736,33 +733,21 @@ public class HOMERController : MonoBehaviour
 
         Transform movementSource = GetTrackingTransform();
 
-        // Fixed-gain HOMER mapping from grab start:
-        // scaleFactor = distance(user, object0) / distance(user, hand0)
-        // objectMovement = physicalHandMovement * scaleFactor
-        // P_object = P_object0 + (P_hand - P_hand0) * scaleFactor
-        Vector3 controllerDelta = movementSource.position - _controllerAnchorPos;
-        Vector3 objectDelta = controllerDelta * _distanceScale;
-        Vector3 targetObjectPos = _objectAnchorPos + objectDelta;
+        // 1:1 incremental mapping: object moves by exactly the same world-space
+        // delta as the physical controller moved this frame.
+        Vector3 frameDelta = movementSource.position - _prevControllerPos;
+        Vector3 targetObjectPos = _heldObject.transform.position + frameDelta;
+        _prevControllerPos = movementSource.position;
 
-        // Clamp to formula-derived limit: hand cannot travel further than maxHandReach from anchor,
-        // so the object cannot travel further than maxHandReach * _distanceScale from its anchor.
-        // This keeps the cap proportional to every individual grab, unlike a fixed distance cap.
-        if (maxHandReach > 0f)
-        {
-            float effectiveMax = maxHandReach * _distanceScale;
-            Vector3 displacement = targetObjectPos - _objectAnchorPos;
-            if (displacement.magnitude > effectiveMax)
-                targetObjectPos = _objectAnchorPos + displacement.normalized * effectiveMax;
-        }
+        Quaternion frameRotDelta = movementSource.rotation * Quaternion.Inverse(_prevControllerRot);
+        Quaternion targetObjectRot = frameRotDelta * _heldObject.transform.rotation;
+        _prevControllerRot = movementSource.rotation;
 
         if (debugMode)
         {
             Debug.Log(
-                $"[HOMER Hold] handΔ={controllerDelta.magnitude:F3}m | scale={_distanceScale:F3} | objΔ={objectDelta.magnitude:F3}m | target={targetObjectPos}");
+                $"[HOMER Hold] frameΔ={frameDelta.magnitude:F4}m | controller={movementSource.position} | object={targetObjectPos}");
         }
-
-        Quaternion controllerDeltaRot = movementSource.rotation * Quaternion.Inverse(_controllerAnchorRot);
-        Quaternion targetObjectRot = controllerDeltaRot * _objectAnchorRot;
 
         // Grab-start transition blend.
         float blend = 1f;
