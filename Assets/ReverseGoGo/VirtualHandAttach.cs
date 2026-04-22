@@ -67,17 +67,22 @@ public class VirtualHandAttach : MonoBehaviour
 
     private InputAction _returnToUIAction;
 
-    // Grip-to-UI: initialized true so first frame is never treated as a new press (carryover guard)
+    // A/B-to-UI: initialized true so first frame is never treated as a new press (carryover guard)
     private bool _prevGripForReturn = true;
 
-    // Returns true on the rising edge of the right-grip button using the XR legacy API (most reliable on Oculus).
+    // Returns true on the rising edge of the right A or B button (primaryButton / secondaryButton).
     private bool GripReturnPressed()
     {
         UnityEngine.XR.InputDevice right = InputDevices.GetDeviceAtXRNode(XRNode.RightHand);
-        bool gripNow = false;
-        if (right.isValid) right.TryGetFeatureValue(UnityEngine.XR.CommonUsages.gripButton, out gripNow);
-        bool pressed = gripNow && !_prevGripForReturn;
-        _prevGripForReturn = gripNow;
+        bool a = false, b = false;
+        if (right.isValid)
+        {
+            right.TryGetFeatureValue(UnityEngine.XR.CommonUsages.primaryButton, out a);   // A
+            right.TryGetFeatureValue(UnityEngine.XR.CommonUsages.secondaryButton, out b); // B
+        }
+        bool abNow = a || b;
+        bool pressed = abNow && !_prevGripForReturn;
+        _prevGripForReturn = abNow;
         return pressed;
     }
 

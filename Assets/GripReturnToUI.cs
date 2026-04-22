@@ -4,9 +4,8 @@ using UnityEngine.XR;
 
 /// <summary>
 /// Persistent singleton. Auto-spawns on startup.
-/// In any non-UI scene: right grip press returns to the UI scene.
-/// Uses the XR legacy input API (checks both gripButton and grip axis) for maximum
-/// hardware compatibility on Meta/Oculus controllers.
+/// In any non-UI scene: right A or B button press returns to the UI scene.
+/// Uses the XR legacy input API (primaryButton / secondaryButton) for Meta/Oculus controllers.
 /// No manual scene setup required.
 /// </summary>
 public class GripReturnToUI : MonoBehaviour
@@ -15,8 +14,8 @@ public class GripReturnToUI : MonoBehaviour
 
     private static GripReturnToUI _instance;
 
-    // Start true so that a grip already held when a scene loads is never mistaken for a new press.
-    private bool _prevGrip = true;
+    // Start true so that a button already held when a scene loads is never mistaken for a new press.
+    private bool _prevAB = true;
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     private static void AutoSpawn()
@@ -49,45 +48,39 @@ public class GripReturnToUI : MonoBehaviour
         {
             // In UI: keep prev = true so that returning to a study scene
             // won't fire on the very first frame (carryover guard).
-            _prevGrip = true;
+            _prevAB = true;
             return;
         }
 
-        // Don't intercept grip when HOMER is actively holding an object (clutch uses grip).
+        // Don't intercept A/B when HOMER is actively holding an object (clutch uses grip).
         HOMERController homer = FindFirstObjectByType<HOMERController>();
         if (homer != null && homer.IsAttached())
         {
-            _prevGrip = ReadRightGrip(); // keep tracking so we don't false-fire after release
+            _prevAB = ReadRightAB(); // keep tracking so we don't false-fire after release
             return;
         }
 
-        bool grip = ReadRightGrip();
-        bool pressed = grip && !_prevGrip;
-        _prevGrip = grip;
+        bool ab = ReadRightAB();
+        bool pressed = ab && !_prevAB;
+        _prevAB = ab;
 
         if (pressed)
         {
-            Debug.Log("[GripReturnToUI] Right grip pressed — loading UI scene.");
+            Debug.Log("[GripReturnToUI] Right A/B pressed — loading UI scene.");
             SceneManager.LoadScene(UiSceneName);
         }
     }
 
-    // Returns whether the right-hand grip is currently pressed.
-    // Checks the digital gripButton first; falls back to the analogue grip axis
-    // (threshold 0.7) for controllers that only expose an axis.
-    private static bool ReadRightGrip()
+    // Returns whether the right-hand A or B button is currently pressed.
+    private static bool ReadRightAB()
     {
         InputDevice device = InputDevices.GetDeviceAtXRNode(XRNode.RightHand);
         if (!device.isValid) return false;
 
-        bool gripBtn;
-        if (device.TryGetFeatureValue(CommonUsages.gripButton, out gripBtn) && gripBtn)
-            return true;
-
-        float gripAxis;
-        if (device.TryGetFeatureValue(CommonUsages.grip, out gripAxis))
-            return gripAxis > 0.7f;
-
-        return false;
+        bool a = false;
+        bool b = false;
+        device.TryGetFeatureValue(CommonUsages.primaryButton, out a);   // A
+        device.TryGetFeatureValue(CommonUsages.secondaryButton, out b); // B
+        return a || b;
     }
 }

@@ -7,7 +7,7 @@ using UnityEngine.XR;
 
 /// <summary>
 /// Standalone in-game scene menu controlled by controller ray + trigger.
-/// Grip opens/closes menu and pauses gameplay while visible.
+/// A/B (right) or X/Y (left) opens/closes menu and pauses gameplay while visible.
 /// </summary>
 public class ControllerRaySceneMenu : MonoBehaviour
 {
@@ -39,8 +39,8 @@ public class ControllerRaySceneMenu : MonoBehaviour
     private bool isVisible;
     private int openedFrame = -1;
 
-    private bool prevRightGrip = true;
-    private bool prevLeftGrip = true;
+    private bool prevRightAB = true;
+    private bool prevLeftXY = true;
     private bool prevRightTrigger = true;
     private bool uiScriptsDisconnected;
     private Vector3 anchoredMenuForward = Vector3.zero;
@@ -138,10 +138,10 @@ public class ControllerRaySceneMenu : MonoBehaviour
         }
 
         ReadInput(
-            out bool gripPressedThisFrame,
+            out bool menuButtonPressedThisFrame,
             out bool triggerPressedThisFrame);
 
-        if (!isVisible && gripPressedThisFrame)
+        if (!isVisible && menuButtonPressedThisFrame)
         {
             ShowMenu();
         }
@@ -152,7 +152,7 @@ public class ControllerRaySceneMenu : MonoBehaviour
         }
 
         bool canClose = Time.frameCount > openedFrame;
-        if (canClose && gripPressedThisFrame)
+        if (canClose && menuButtonPressedThisFrame)
         {
             HideMenu();
             return;
@@ -203,6 +203,12 @@ public class ControllerRaySceneMenu : MonoBehaviour
         panelRect.anchoredPosition = Vector2.zero;
         panelRect.sizeDelta = new Vector2(460f, 326f);
 
+        // Add a thin collider on the panel so the ray stops at the panel face
+        // instead of passing through the background between buttons.
+        BoxCollider panelCollider = panelObj.AddComponent<BoxCollider>();
+        panelCollider.size = new Vector3(panelRect.sizeDelta.x, panelRect.sizeDelta.y, 0.5f);
+        panelCollider.center = new Vector3(panelRect.sizeDelta.x / 2f, -panelRect.sizeDelta.y / 2f, 0f);
+
         GameObject titleObj = CreateUiObject("Title", panelObj.transform);
         Text title = titleObj.AddComponent<Text>();
         title.text = "Select Technique";
@@ -239,7 +245,7 @@ public class ControllerRaySceneMenu : MonoBehaviour
 
         GameObject hintObj = CreateUiObject("Hint", panelObj.transform);
         Text hint = hintObj.AddComponent<Text>();
-        hint.text = "Grip: open/close menu | Point controller ray + Trigger: select";
+        hint.text = "A/B: open/close menu | Point controller ray + Trigger: select";
         hint.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
         hint.alignment = TextAnchor.MiddleCenter;
         hint.color = new Color(0.9f, 0.9f, 0.9f, 1f);
@@ -335,6 +341,9 @@ public class ControllerRaySceneMenu : MonoBehaviour
 
         BoxCollider collider = buttonObj.AddComponent<BoxCollider>();
         collider.size = new Vector3(buttonRect.sizeDelta.x, buttonRect.sizeDelta.y, 2f);
+        // Pivot is top-left (0,1), so the rect extends +X and -Y from origin.
+        // Center the collider on the actual visible area.
+        collider.center = new Vector3(buttonRect.sizeDelta.x / 2f, -buttonRect.sizeDelta.y / 2f, 0f);
 
         GameObject textObj = CreateUiObject("Text", buttonObj.transform);
         Text text = textObj.AddComponent<Text>();
@@ -365,32 +374,36 @@ public class ControllerRaySceneMenu : MonoBehaviour
         DontDestroyOnLoad(eventSystem);
     }
 
-    private void ReadInput(out bool gripPressedThisFrame, out bool triggerPressedThisFrame)
+    private void ReadInput(out bool menuButtonPressedThisFrame, out bool triggerPressedThisFrame)
     {
-        bool rightGrip = false;
-        bool leftGrip = false;
+        bool rightA = false;
+        bool rightB = false;
+        bool leftX = false;
+        bool leftY = false;
         bool rightTrigger = false;
 
         InputDevice right = InputDevices.GetDeviceAtXRNode(XRNode.RightHand);
         if (right.isValid)
         {
-            right.TryGetFeatureValue(CommonUsages.gripButton, out rightGrip);
+            right.TryGetFeatureValue(CommonUsages.primaryButton, out rightA);   // A
+            right.TryGetFeatureValue(CommonUsages.secondaryButton, out rightB); // B
             right.TryGetFeatureValue(CommonUsages.triggerButton, out rightTrigger);
         }
 
         InputDevice left = InputDevices.GetDeviceAtXRNode(XRNode.LeftHand);
         if (left.isValid)
         {
-            left.TryGetFeatureValue(CommonUsages.gripButton, out leftGrip);
+            left.TryGetFeatureValue(CommonUsages.primaryButton, out leftX);   // X
+            left.TryGetFeatureValue(CommonUsages.secondaryButton, out leftY); // Y
         }
 
-        bool grip = rightGrip || leftGrip;
+        bool menuBtn = rightA || rightB || leftX || leftY;
 
-        gripPressedThisFrame = grip && !(prevRightGrip || prevLeftGrip);
+        menuButtonPressedThisFrame = menuBtn && !(prevRightAB || prevLeftXY);
         triggerPressedThisFrame = rightTrigger && !prevRightTrigger;
 
-        prevRightGrip = rightGrip;
-        prevLeftGrip = leftGrip;
+        prevRightAB = rightA || rightB;
+        prevLeftXY  = leftX  || leftY;
         prevRightTrigger = rightTrigger;
     }
 
