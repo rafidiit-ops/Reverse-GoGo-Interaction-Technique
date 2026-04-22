@@ -527,6 +527,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::TargetCubeTrigger
   targetColor: Red
   requiredObjectInsideFraction: 0.6
+  hoverMaterial: {fileID: 15303, guid: 0000000000000000f000000000000000, type: 0}
 --- !u!1001 &369235270
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -861,6 +862,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::TargetCubeTrigger
   targetColor: Blue
   requiredObjectInsideFraction: 0.6
+  hoverMaterial: {fileID: 15303, guid: 0000000000000000f000000000000000, type: 0}
 --- !u!1001 &478201429
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -1872,6 +1874,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::TargetCubeTrigger
   targetColor: Green
   requiredObjectInsideFraction: 0.6
+  hoverMaterial: {fileID: 15303, guid: 0000000000000000f000000000000000, type: 0}
 --- !u!114 &1593756029 stripped
 MonoBehaviour:
   m_CorrespondingSourceObject: {fileID: 94939328584815900, guid: dd473cb67df770f459bfbdc3aa64e0fb, type: 3}
@@ -2180,6 +2183,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::TargetCubeTrigger
   targetColor: Yellow
   requiredObjectInsideFraction: 0.6
+  hoverMaterial: {fileID: 15303, guid: 0000000000000000f000000000000000, type: 0}
 --- !u!1001 &1780317499
 PrefabInstance:
   m_ObjectHideFlags: 0

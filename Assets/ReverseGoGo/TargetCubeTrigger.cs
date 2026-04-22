@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using UnityEngine;
 
 public class TargetCubeTrigger : MonoBehaviour
@@ -7,10 +8,21 @@ public class TargetCubeTrigger : MonoBehaviour
     public string targetColor; // Red, Green, Blue, Yellow
     [Range(0f, 1f)] public float requiredObjectInsideFraction = 0.8f;
 
+    [Header("Hover Visual")]
+    [Tooltip("Material applied to the target cube when the placed object is >=80% inside.")]
+    public Material hoverMaterial;
+    [Range(0f, 1f)]
+    [Tooltip("Fraction of the object that must be inside the target to show the hover highlight (default 0.8 = 80%).")]
+    public float hoverInsideFraction = 0.8f;
+    [Tooltip("How long (seconds) the hover highlight is shown before the placement event fires and the target disappears.")]
+    public float hoverDisplayDuration = 0.5f;
+
     public event Action<GameObject, string, bool> OnObjectPlaced;
 
     private Renderer targetRenderer;
     private Material originalMaterial;
+    private bool _isHovering = false;
+    private bool _placementPending = false;
 
     private void Awake()
     {
@@ -75,13 +87,68 @@ public class TargetCubeTrigger : MonoBehaviour
             return;
         }
 
-        if (CalculateObjectInsideFraction(placedObject, gameObject) < Mathf.Clamp01(requiredObjectInsideFraction))
+        float fraction = CalculateObjectInsideFraction(placedObject, gameObject);
+        float threshold = Mathf.Clamp01(requiredObjectInsideFraction);
+
+        // Hover activates independently at hoverInsideFraction (default 80%).
+        SetHover(fraction >= Mathf.Clamp01(hoverInsideFraction));
+
+        if (fraction < threshold)
         {
             return;
         }
 
+        TriggerPlacement(placedObject);
+    }
+
+    // Called by SequentialPairVisibility.Update() proximity path so both routes
+    // go through hover → delay → OnObjectPlaced instead of disappearing immediately.
+    public bool IsPlacementPending => _placementPending;
+
+    public void TriggerPlacement(GameObject placedObject)
+    {
+        if (_placementPending || placedObject == null)
+        {
+            return;
+        }
+
+        SetHover(true);
+        _placementPending = true;
         bool isCorrect = IsColorMatch(placedObject, targetColor);
+        // Delay the event so the hover highlight is visible before the target disappears.
+        StartCoroutine(FirePlacementAfterDelay(placedObject, isCorrect));
+    }
+
+    private IEnumerator FirePlacementAfterDelay(GameObject placedObject, bool isCorrect)
+    {
+        yield return new WaitForSeconds(Mathf.Max(0f, hoverDisplayDuration));
         OnObjectPlaced?.Invoke(placedObject, targetColor, isCorrect);
+    }
+
+    private void OnTriggerExit(Collider other)
+    {
+        if (!_placementPending)
+        {
+            SetHover(false);
+        }
+    }
+
+    private void SetHover(bool hover)
+    {
+        if (targetRenderer == null || hover == _isHovering)
+        {
+            return;
+        }
+
+        _isHovering = hover;
+        if (hover && hoverMaterial != null)
+        {
+            targetRenderer.material = hoverMaterial;
+        }
+        else if (!hover && originalMaterial != null)
+        {
+            targetRenderer.material = originalMaterial;
+        }
     }
 
     private static float CalculateObjectInsideFraction(GameObject objectGo, GameObject targetGo)
@@ -328,6 +395,9 @@ public class TargetCubeTrigger : MonoBehaviour
 
     public void ResetVisual()
     {
+        _isHovering = false;
+        _placementPending = false;
+        StopAllCoroutines();
         if (targetRenderer != null && originalMaterial != null)
         {
             targetRenderer.material = originalMaterial;

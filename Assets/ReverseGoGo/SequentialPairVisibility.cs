@@ -97,8 +97,11 @@ public class SequentialPairVisibility : MonoBehaviour
 
         if (IsObjectPlacedInsideTarget(currentObject, currentTarget.gameObject))
         {
-            CompleteCurrentPair(currentObject);
-            Debug.Log("SequentialPairVisibility completed by inside-target validation.");
+            // Route through TargetCubeTrigger so hover shows before the target disappears.
+            if (!currentTarget.IsPlacementPending)
+            {
+                currentTarget.TriggerPlacement(currentObject);
+            }
         }
     }
 
@@ -163,11 +166,10 @@ public class SequentialPairVisibility : MonoBehaviour
             return;
         }
 
-        if (!IsObjectPlacedInsideTarget(currentObject, currentTarget.gameObject))
-        {
-            return;
-        }
-
+        // Do NOT re-check IsObjectPlacedInsideTarget here: the event is fired by
+        // TriggerPlacement after a hover delay, during which the user may have
+        // released the object so it no longer sits inside the target bounds.
+        // The fraction was already validated at the moment TriggerPlacement was called.
         CompleteCurrentPair(placedObject);
     }
 

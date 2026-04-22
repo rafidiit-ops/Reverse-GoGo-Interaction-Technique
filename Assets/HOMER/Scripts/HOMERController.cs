@@ -767,10 +767,12 @@ public class HOMERController : MonoBehaviour
             : targetObjectPos;
 
         // Keep remote hand orientation fixed while it travels outward;
-        // this avoids visible bending/twisting during the attach flight.
+        // once attached, always use the real controller's world-space rotation
+        // so the virtual hand stays straight regardless of the object's orientation.
+        // Rotate 180° around Y so the hand faces forward (away from the user) rather than back.
         Quaternion handRot = _isTransitioning
             ? _transitionStartRot
-            : targetObjectRot;
+            : movementSource.rotation * Quaternion.Euler(0f, 180f, 0f);
 
         // Drive the held object directly to HOMER target each frame for stability.
         // Only the virtual hand visual uses transition blending.
