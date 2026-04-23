@@ -282,17 +282,7 @@ public class VirtualHandAttach : MonoBehaviour
             targetPos += toController * nearHandConvergenceSpeed * nearHand01 * dt;
         }
 
-        // Forward recovery is capped to the original grab radius.
-        // This restores the object to where it was grabbed from, but does not push beyond it.
-        if (isMovingForward)
-        {
-            Vector3 radial = targetPos - hmdPosition;
-            float radialDistance = radial.magnitude;
-            if (radialDistance > initialDistanceToController && radialDistance > 0.000001f)
-            {
-                targetPos = hmdPosition + radial.normalized * initialDistanceToController;
-            }
-        }
+        // Forward extension is uncapped: object can be pushed beyond its grab position.
 
         // Center-based directional mapping:
         // keep mapped radius from gain logic, but lock direction to controller direction from HMD.
@@ -301,15 +291,7 @@ public class VirtualHandAttach : MonoBehaviour
         {
             float mappedRadius = Vector3.Distance(targetPos, hmdPosition);
 
-            // Forward mode uses an explicit recovery curve from the pulled radius
-            // back to the original grab radius as the hand re-extends.
-            if (isMovingForward)
-            {
-                float denom = Mathf.Max(rangeEnd - forwardRecoveryStartControllerRadius, 0.001f);
-                float recoveryT = Mathf.Clamp01((controllerDistanceFromHMD - forwardRecoveryStartControllerRadius) / denom);
-                float forwardRecoveryRadius = Mathf.Lerp(forwardRecoveryStartRadius, initialDistanceToController, recoveryT);
-                mappedRadius = Mathf.Min(forwardRecoveryRadius, initialDistanceToController);
-            }
+            // Forward and backward both use the gain-mapped radius without capping.
 
             Vector3 controllerFromCenter = controllerTransform.position - hmdPosition;
             if (mappedRadius > 0.000001f && controllerFromCenter.sqrMagnitude > 0.000001f)
