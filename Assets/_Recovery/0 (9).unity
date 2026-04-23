@@ -6609,8 +6609,8 @@ MonoBehaviour:
   lineRenderer: {fileID: 0}
   rayColor: {r: 0, g: 1, b: 1, a: 1}
   rayWidth: 0.01
-  rayActivationDistanceFromHmd: 0
-  activationMargin: -0.5
+  rayActivationDistanceFromHmd: 0.12
+  activationMargin: 0.05
   highlightMaterial: {fileID: 2100000, guid: a7b99e86c3ba8b64bb2a8d8f3cb432b4, type: 2}
   disableOtherSceneRays: 1
 --- !u!1 &4694122664204528204
