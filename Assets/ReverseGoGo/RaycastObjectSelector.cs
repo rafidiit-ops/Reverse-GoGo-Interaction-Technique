@@ -14,7 +14,8 @@ public class RaycastObjectSelector : MonoBehaviour
     public Color rayColor = Color.cyan;   // Ray color
     public float rayWidth = 0.01f;         // Ray width (0.01m = 1cm)
     public float rayActivationDistanceFromHmd = 0.120f; // Ray shows only beyond this HMD distance
-    public float activationMargin = -0.02f; // Offset relative to depthScale threshold (negative = activates before full arm length)
+    [Range(0f, 1f)]
+    public float rayActivationFraction = 0.6f; // Ray activates when arm reaches this fraction of calibrated length (e.g. 0.6 = 60%)
     public Material highlightMaterial;     // Material to apply when hovering
     public bool disableOtherSceneRays = true; // Disable all other line visuals so only this ray remains
 
@@ -29,9 +30,6 @@ public class RaycastObjectSelector : MonoBehaviour
     {
         if (rayOrigin == null)
             rayOrigin = transform;
-
-        // Ensure the margin is always -2 cm regardless of the serialized Inspector value.
-        activationMargin = -0.02f;
 
         // Always use a dedicated runtime line so legacy/XR line visuals cannot override color.
         GameObject runtimeLineObj = new GameObject("RaycastSelectorRuntimeLine");
@@ -141,8 +139,8 @@ public class RaycastObjectSelector : MonoBehaviour
         float activationDistance;
         if (depthScale != null)
         {
-            // Activate ray 2 cm before the calibrated arm-length threshold
-            activationDistance = depthScale.thresholdDistance + activationMargin;
+            // Activate ray when arm reaches the configured fraction of the calibrated arm length.
+            activationDistance = depthScale.thresholdDistance * rayActivationFraction;
         }
         else
         {

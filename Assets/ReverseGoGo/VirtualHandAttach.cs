@@ -182,11 +182,8 @@ public class VirtualHandAttach : MonoBehaviour
         }
         
         // Keep virtual hand visible and positioned with object during trigger mode
-        Vector3 cubePos = currentlyGrabbedObject.transform.position;
-        Vector3 cameraPos = Camera.main.transform.position;
-        Vector3 dirToCamera = (cameraPos - cubePos).normalized;
-        virtualHand.position = cubePos + dirToCamera * handOffset;
-        virtualHand.LookAt(cubePos);
+        // (virtualHand is parented to the object — position is maintained automatically)
+        virtualHand.rotation = controllerTransform.rotation;
     }
 
     private void ApplyGoGoMovement()
@@ -282,8 +279,11 @@ public class VirtualHandAttach : MonoBehaviour
             targetPos += toController * nearHandConvergenceSpeed * nearHand01 * dt;
         }
 
+<<<<<<< Updated upstream
         // Forward extension is uncapped: object can be pushed beyond its grab position.
 
+=======
+>>>>>>> Stashed changes
         // Center-based directional mapping:
         // keep mapped radius from gain logic, but lock direction to controller direction from HMD.
         // This balances left/right gain and ensures a closed 360 path returns to the same position.
@@ -291,8 +291,11 @@ public class VirtualHandAttach : MonoBehaviour
         {
             float mappedRadius = Vector3.Distance(targetPos, hmdPosition);
 
+<<<<<<< Updated upstream
             // Forward and backward both use the gain-mapped radius without capping.
 
+=======
+>>>>>>> Stashed changes
             Vector3 controllerFromCenter = controllerTransform.position - hmdPosition;
             if (mappedRadius > 0.000001f && controllerFromCenter.sqrMagnitude > 0.000001f)
             {
@@ -334,11 +337,7 @@ public class VirtualHandAttach : MonoBehaviour
         }
         
         // Position virtual hand visual at object location
-        Vector3 cubePos = currentlyGrabbedObject.transform.position;
-        Vector3 cameraPos = Camera.main.transform.position;
-        Vector3 dirToCamera = (cameraPos - cubePos).normalized;
-        virtualHand.position = cubePos + dirToCamera * handOffset;
-        virtualHand.LookAt(cubePos);
+        // (virtualHand is parented to the object — position is maintained automatically)
         
         // Match virtual hand rotation to controller rotation
         virtualHand.rotation = controllerTransform.rotation;
@@ -380,6 +379,16 @@ public class VirtualHandAttach : MonoBehaviour
         }
 
         return bestTarget;
+    }
+
+    // Returns the point on the object's bounding-sphere surface closest to referencePoint.
+    private Vector3 GetSurfacePoint(GameObject obj, Vector3 referencePoint)
+    {
+        Renderer rend = obj.GetComponent<Renderer>();
+        float radius = rend != null ? rend.bounds.extents.magnitude : 0.05f;
+        Vector3 dir = referencePoint - obj.transform.position;
+        if (dir.sqrMagnitude < 0.000001f) dir = Vector3.forward;
+        return obj.transform.position + dir.normalized * radius;
     }
 
     private float CalculateSpatialGain(float objectDistance, float threshold)
@@ -455,6 +464,7 @@ public class VirtualHandAttach : MonoBehaviour
         // Move virtual hand off-screen and make it visible again for next grab
         if (virtualHand != null)
         {
+            virtualHand.SetParent(null); // detach from object before repositioning
             virtualHand.position = new Vector3(1000f, 1000f, 1000f);
             
             // Re-enable all renderers in hierarchy for next grab
@@ -508,14 +518,6 @@ public class VirtualHandAttach : MonoBehaviour
         if (selector != null)
         {
             selector.SetGrabbedState(true);
-        }
-
-        // Get cube size for offset
-        Renderer renderer = objectToGrab.GetComponent<Renderer>();
-        handOffset = 0.6f;
-        if (renderer != null)
-        {
-            handOffset = renderer.bounds.extents.magnitude * 1.2f;
         }
 
         // Store starting positions for Go-Go calculation
@@ -576,13 +578,32 @@ public class VirtualHandAttach : MonoBehaviour
                 rend.enabled = true;
         }
 
-        // Position virtual hand with object
-        Vector3 cubePos = objectToGrab.transform.position;
-        Vector3 cameraPos = Camera.main.transform.position;
-        Vector3 dirToCamera = (cameraPos - cubePos).normalized;
-        
-        virtualHand.position = cubePos + dirToCamera * handOffset;
-        virtualHand.LookAt(cubePos);
+        // Position virtual hand on the center of the surface facing the controller.
+        // Raycast from controller toward object center — this hits the middle of the facing face.
+        // If the controller is already inside the collider, reverse the ray from center outward.
+        Collider grabCol = objectToGrab.GetComponent<Collider>();
+        Vector3 surfacePoint = objectToGrab.transform.position; // fallback: object center
+        if (grabCol != null)
+        {
+            Vector3 toObject = objectToGrab.transform.position - controllerTransform.position;
+            Vector3 dir = toObject.normalized;
+            Ray ray = new Ray(controllerTransform.position, dir);
+            RaycastHit hit;
+            if (grabCol.Raycast(ray, out hit, 10f))
+            {
+                surfacePoint = hit.point;
+            }
+            else
+            {
+                // Controller is inside the collider — shoot outward from center toward controller
+                Vector3 reverseDir = -dir;
+                Ray reverseRay = new Ray(objectToGrab.transform.position, reverseDir);
+                if (grabCol.Raycast(reverseRay, out hit, 10f))
+                    surfacePoint = hit.point;
+            }
+        }
+        virtualHand.SetParent(objectToGrab.transform);
+        virtualHand.position = surfacePoint;
 
         Debug.Log($"✋ [TRIGGER] Go-Go mode activated on: {objectToGrab.name}");
         Debug.Log($"   Initial distance to HMD: {initialDistanceToController:F2}m");

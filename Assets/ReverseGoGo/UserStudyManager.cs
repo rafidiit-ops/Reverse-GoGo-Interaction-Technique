@@ -30,15 +30,23 @@ public class UserStudyManager : MonoBehaviour
     void Start()
     {
         // Initialize data logger
-        dataLogger.InitializeSession();
+        if (dataLogger == null)
+        {
+            Debug.LogWarning("UserStudyManager: dataLogger is not assigned. Skipping data logging.");
+        }
+        else
+        {
+            dataLogger.InitializeSession();
+        }
         
         // Get next participant ID automatically
-        currentParticipantID = dataLogger.GetNextParticipantID();
+        currentParticipantID = dataLogger != null ? dataLogger.GetNextParticipantID() : "UNASSIGNED";
         Debug.Log($"Starting study for Participant {currentParticipantID}");
         
         // Subscribe to bubble events
         foreach (BubbleTarget bubble in bubbleTargets)
         {
+            if (bubble == null) continue;
             bubble.OnObjectPlaced += HandleObjectPlaced;
         }
         
@@ -146,14 +154,17 @@ public class UserStudyManager : MonoBehaviour
         currentData.PullingAccuracy = pullingAccuracy;
         
         // Log data
-        dataLogger.LogParticipantData(currentData);
+        if (dataLogger != null)
+        {
+            dataLogger.LogParticipantData(currentData);
+            Debug.Log($"Data saved to: {dataLogger.GetDataFilePath()}");
+        }
         
         Debug.Log($"===== Study Complete for Participant {currentParticipantID} =====");
         Debug.Log($"Success Rate: {successRate:F2}%");
         Debug.Log($"Error Rate: {errorRate}");
         Debug.Log($"Average Task Time: {avgTaskTime:F2}s");
         Debug.Log($"Pulling Accuracy: {pullingAccuracy:F2}%");
-        Debug.Log($"Data saved to: {dataLogger.GetDataFilePath()}");
         
         // Reset for next participant (optional - can also stop here)
         ResetStudy();
@@ -171,7 +182,7 @@ public class UserStudyManager : MonoBehaviour
         lastSelectedObject = null;
         
         // Get next participant ID
-        currentParticipantID = dataLogger.GetNextParticipantID();
+        currentParticipantID = dataLogger != null ? dataLogger.GetNextParticipantID() : "UNASSIGNED";
         taskStartTime = Time.time;
         
         // Reset all bubbles

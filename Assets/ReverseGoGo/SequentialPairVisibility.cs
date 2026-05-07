@@ -693,7 +693,7 @@ public class SequentialPairVisibility : MonoBehaviour
                     continue;
                 }
 
-                if (t.name.IndexOf("Phantom", StringComparison.OrdinalIgnoreCase) >= 0 || t.CompareTag("Grabbable"))
+                if (t.name.IndexOf("Phantom", StringComparison.OrdinalIgnoreCase) >= 0 || t.tag == "Grabbable")
                 {
                     candidates.Add(t);
                 }
