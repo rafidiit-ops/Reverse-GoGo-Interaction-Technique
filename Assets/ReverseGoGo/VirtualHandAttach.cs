@@ -279,23 +279,12 @@ public class VirtualHandAttach : MonoBehaviour
             targetPos += toController * nearHandConvergenceSpeed * nearHand01 * dt;
         }
 
-<<<<<<< Updated upstream
-        // Forward extension is uncapped: object can be pushed beyond its grab position.
-
-=======
->>>>>>> Stashed changes
         // Center-based directional mapping:
         // keep mapped radius from gain logic, but lock direction to controller direction from HMD.
         // This balances left/right gain and ensures a closed 360 path returns to the same position.
         if (controllerDistanceFromHMD > rangeStart)
         {
             float mappedRadius = Vector3.Distance(targetPos, hmdPosition);
-
-<<<<<<< Updated upstream
-            // Forward and backward both use the gain-mapped radius without capping.
-
-=======
->>>>>>> Stashed changes
             Vector3 controllerFromCenter = controllerTransform.position - hmdPosition;
             if (mappedRadius > 0.000001f && controllerFromCenter.sqrMagnitude > 0.000001f)
             {
