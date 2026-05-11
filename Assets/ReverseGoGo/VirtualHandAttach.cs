@@ -50,6 +50,8 @@ public class VirtualHandAttach : MonoBehaviour
     private Quaternion initialControllerRotation; // Controller rotation when grab started
     private Quaternion initialObjectRotation;     // Object rotation when grab started
     private Quaternion centerDirectionOffset = Quaternion.identity; // Keeps initial center-relative direction to avoid snap on attach
+    private Vector3 grabbedChestPos;              // Chest origin locked at grab time — does not shift with head movement
+    private Vector3 grabbedTorsoForward;          // Torso forward locked at grab time — does not rotate with head
     private Vector3 previousControllerPosition;   // Controller position from previous frame (for delta mapping)
     private Vector3 smoothedControllerDelta;      // Low-pass filtered controller delta
     private float smoothedSpatialGain = 1f;       // Low-pass filtered gain for stable transition
@@ -192,7 +194,11 @@ public class VirtualHandAttach : MonoBehaviour
             return;
 
         float dt = Mathf.Max(Time.deltaTime, 0.0001f);
-        Vector3 hmdPosition = Camera.main.transform.position;
+
+        // Use torso origin and forward direction locked at grab time.
+        // These do not change when the user rotates or tilts their head.
+        Vector3 chestPos = grabbedChestPos;
+        Vector3 torsoForward = grabbedTorsoForward;
 
         // Track controller movement — skip update when stationary to avoid drift.
         Vector3 controllerDelta = controllerTransform.position - previousControllerPosition;
@@ -203,11 +209,16 @@ public class VirtualHandAttach : MonoBehaviour
 
         float rangeStart = Mathf.Max(0.001f, directGrabDistance);
         float rangeEnd   = Mathf.Max(rangeStart + 0.001f, Mathf.Max(0.001f, depthScale.thresholdDistance));
-        float controllerDistanceFromHMD = Vector3.Distance(controllerTransform.position, hmdPosition);
+
+        // Full 3D distance from the locked chest origin to the controller.
+        // Using distance (not dot product) means lateral hand movement does not reduce
+        // the measured extension — only moving the arm closer/further from the body does.
+        // Head movement is still fully decoupled because grabbedChestPos is frozen at grab time.
+        float controllerExtension = Vector3.Distance(controllerTransform.position, chestPos);
 
         Vector3 targetPos;
 
-        if (controllerDistanceFromHMD <= rangeStart)
+        if (controllerExtension <= rangeStart)
         {
             // Direct-grab zone: object follows hand 1:1.
             targetPos = controllerTransform.position;
@@ -215,21 +226,21 @@ public class VirtualHandAttach : MonoBehaviour
         else
         {
             // Position-based quadratic mapping — symmetric by construction:
-            //   rangeT = 0 (arm near head)  → object at 0 m (beside you)
-            //   rangeT = 1 (arm extended)   → object at initialDistanceToController (e.g. 10 m)
-            // Because the object radius is a pure function of arm extension,
-            // the same arm sweep that pulls the object to you will push it back to its original distance.
-            float rangeT = Mathf.Clamp01((controllerDistanceFromHMD - rangeStart) / (rangeEnd - rangeStart));
+            //   rangeT = 0 (arm near torso)   → object at 0 m (beside you)
+            //   rangeT = 1 (arm extended)      → object at initialDistanceToController (e.g. 10 m)
+            // Because object radius is a pure function of arm extension,
+            // the same arm sweep that pulls the object to you pushes it back to its original distance.
+            float rangeT = Mathf.Clamp01((controllerExtension - rangeStart) / (rangeEnd - rangeStart));
             float targetObjectRadius = initialDistanceToController * rangeT * rangeT;
 
-            // Lock direction to controller direction from HMD, preserving the initial offset
-            // so a closed lateral arc returns the object to its starting position.
-            Vector3 controllerFromCenter = controllerTransform.position - hmdPosition;
+            // Direction: controller relative to chest (not HMD) so head rotation does not
+            // shift the object's lateral position during an active grab.
+            Vector3 controllerFromCenter = controllerTransform.position - chestPos;
             Vector3 mappedDirection = controllerFromCenter.sqrMagnitude > 0.000001f
                 ? centerDirectionOffset * controllerFromCenter.normalized
                 : Vector3.forward;
 
-            targetPos = hmdPosition + mappedDirection * targetObjectRadius;
+            targetPos = chestPos + mappedDirection * targetObjectRadius;
         }
 
         // Smooth the computed target position to remove jitter.
@@ -446,9 +457,16 @@ public class VirtualHandAttach : MonoBehaviour
         // Store rotations for rotation tracking
         initialControllerRotation = controllerTransform.rotation;
         initialObjectRotation = objectToGrab.transform.rotation;
-        
-        // Calculate initial distance from object to HMD (for exponential gain)
-        initialDistanceToController = Vector3.Distance(cubeStartPos, initialHMDPosition);
+
+        // Lock torso reference frame once at grab time.
+        // grabbedChestPos and grabbedTorsoForward never change during the grab,
+        // so head rotation/translation cannot shift the held object.
+        grabbedChestPos = initialHMDPosition + Vector3.down * 0.2f;
+        Vector3 rawForward = new Vector3(Camera.main.transform.forward.x, 0f, Camera.main.transform.forward.z);
+        grabbedTorsoForward = rawForward.sqrMagnitude > 0.0001f ? rawForward.normalized : Vector3.forward;
+
+        // Calculate initial distance from object to chest origin for torso-based mapping.
+        initialDistanceToController = Vector3.Distance(cubeStartPos, grabbedChestPos);
         forwardRecoveryStartRadius = initialDistanceToController;
         forwardRecoveryStartControllerRadius = Vector3.Distance(controllerPullStartPos, initialHMDPosition);
         
@@ -464,9 +482,9 @@ public class VirtualHandAttach : MonoBehaviour
         grabOffset = cubeStartPos - initialVirtualHandPos;
 
         // Preserve the initial angular difference between controller direction and object direction
-        // around the HMD center to prevent a jump on the first attached frame.
-        Vector3 initialControllerDir = controllerPullStartPos - initialHMDPosition;
-        Vector3 initialObjectDir = cubeStartPos - initialHMDPosition;
+        // around the locked chest origin to prevent a jump on the first attached frame.
+        Vector3 initialControllerDir = controllerPullStartPos - grabbedChestPos;
+        Vector3 initialObjectDir = cubeStartPos - grabbedChestPos;
         if (initialControllerDir.sqrMagnitude > 0.000001f && initialObjectDir.sqrMagnitude > 0.000001f)
         {
             centerDirectionOffset = Quaternion.FromToRotation(initialControllerDir.normalized, initialObjectDir.normalized);

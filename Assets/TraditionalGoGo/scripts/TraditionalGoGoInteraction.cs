@@ -42,6 +42,7 @@ public class TraditionalGoGoInteraction : MonoBehaviour
     private Quaternion virtualHandRotationOffset = Quaternion.identity;
     private bool hasLockedSurfaceLocalPoint = false;
     private Vector3 lockedSurfaceLocalPoint;
+    private Vector3 grabbedChestPos;              // Chest origin locked at grab time — does not shift with head movement
     private bool hasGrabRigidbodySettings = false;
     private RigidbodyInterpolation preGrabInterpolation;
     private CollisionDetectionMode preGrabCollisionMode;
@@ -262,21 +263,28 @@ public class TraditionalGoGoInteraction : MonoBehaviour
 
     /// <summary>
     /// Calculate virtual hand position using Traditional GoGo formula
+    /// Uses torso-based distance (chest origin) instead of HMD, so head movement doesn't affect reach.
+    /// When grabbing, uses locked chest position from grab time; when free, uses current chest position.
     /// </summary>
     private Vector3 CalculateVirtualHandPosition()
     {
-        // Get real controller distance from HMD
-        float realDistance = Vector3.Distance(hmdTransform.position, controllerTransform.position);
+        // Torso origin: 0.2 m below HMD
+        // When grabbing, use the chest position locked at grab time so head movement doesn't shift the object.
+        // When not grabbing, use the current chest position for free-reaching behavior.
+        Vector3 chestPos = isGrabbing ? grabbedChestPos : (hmdTransform.position + Vector3.down * 0.2f);
 
-        // Safety check: if too close to HMD, place virtual hand at a safe distance
+        // Get real controller distance from chest (torso)
+        float realDistance = Vector3.Distance(chestPos, controllerTransform.position);
+
+        // Safety check: if too close to chest, place virtual hand at a safe distance
         if (realDistance < 0.05f)
         {
-            // Place virtual hand 0.3m in front of HMD when controller is too close
-            return hmdTransform.position + hmdTransform.forward * 0.3f;
+            // Place virtual hand 0.3m in front of chest when controller is too close
+            return chestPos + (controllerTransform.position - chestPos).normalized * 0.3f;
         }
 
-        // Direction from HMD to controller
-        Vector3 directionFromHMD = (controllerTransform.position - hmdTransform.position).normalized;
+        // Direction from chest to controller
+        Vector3 directionFromChest = (controllerTransform.position - chestPos).normalized;
 
         float virtualDistance;
 
@@ -289,17 +297,16 @@ public class TraditionalGoGoInteraction : MonoBehaviour
         {
             // Beyond threshold: Exponential scaling
             // Formula: D_virtual = D_real + k × (D_real - D_threshold)²
-            // This ensures virtual is ALWAYS >= real
             float beyondThreshold = realDistance - threshold;
             float amplification = scalingFactor * Mathf.Pow(beyondThreshold, 2.0f);
-            virtualDistance = realDistance + amplification;  // ADD to real distance, not replace
+            virtualDistance = realDistance + amplification;
 
             // Clamp to maximum extension
             virtualDistance = Mathf.Min(virtualDistance, maxExtension);
         }
 
-        // Calculate virtual hand position
-        Vector3 virtualHandPosition = hmdTransform.position + directionFromHMD * virtualDistance;
+        // Calculate virtual hand position from chest origin
+        Vector3 virtualHandPosition = chestPos + directionFromChest * virtualDistance;
 
         return virtualHandPosition;
     }
@@ -344,6 +351,9 @@ public class TraditionalGoGoInteraction : MonoBehaviour
         isGrabbing = true;
         hasLockedSurfaceLocalPoint = false;
 
+        // Lock chest position at grab time so head movement doesn't affect the held object.
+        grabbedChestPos = hmdTransform.position + Vector3.down * 0.2f;
+
         // Calculate offset from virtual hand to object
         grabOffset = obj.transform.position - virtualHandPos;
         grabRotationOffset = Quaternion.Inverse(virtualHand.rotation) * obj.transform.rotation;
@@ -351,14 +361,7 @@ public class TraditionalGoGoInteraction : MonoBehaviour
         // Disable physics during grab
         Rigidbody rb = obj.GetComponent<Rigidbody>();
         if (rb != null && !rb.isKinematic)
-        {
-            hasGrabRigidbodySettings = true;
-            preGrabInterpolation = rb.interpolation;
-            preGrabCollisionMode = rb.collisionDetectionMode;
-
-            rb.useGravity = false;
-            rb.linearVelocity = Vector3.zero;
-            rb.angularVelocity = Vector3.zero;
+        { rb.angularVelocity = Vector3.zero;
             rb.interpolation = RigidbodyInterpolation.Interpolate;
             rb.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
         }
