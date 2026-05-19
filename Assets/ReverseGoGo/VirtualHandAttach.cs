@@ -72,6 +72,23 @@ public class VirtualHandAttach : MonoBehaviour
     // A/B-to-UI: initialized true so first frame is never treated as a new press (carryover guard)
     private bool _prevGripForReturn = true;
 
+    // Searches for "Right Hand" under the persistent XR Origin when this scene has no XR rig.
+    private static Transform FindPersistentRightHand()
+    {
+        // Try the known hierarchy: XR Origin (VR) > Camera Offset > Right Hand
+        string[] xrOriginNames = { "XR Origin (VR)", "XR Origin", "XROrigin" };
+        foreach (string originName in xrOriginNames)
+        {
+            GameObject origin = GameObject.Find(originName);
+            if (origin == null) continue;
+            Transform camOffset = origin.transform.Find("Camera Offset");
+            if (camOffset == null) continue;
+            Transform rightHand = camOffset.Find("Right Hand");
+            if (rightHand != null) return rightHand;
+        }
+        return null;
+    }
+
     // Returns true on the rising edge of the right A or B button (primaryButton / secondaryButton).
     private bool GripReturnPressed()
     {
@@ -97,17 +114,35 @@ public class VirtualHandAttach : MonoBehaviour
 
         if (controllerTransform == null)
         {
-            Debug.LogError("VirtualHandAttach: controllerTransform is not assigned!");
+            // Auto-find the persistent Right Hand controller when XROrigin is not in this scene.
+            Transform rightHand = FindPersistentRightHand();
+            if (rightHand != null)
+                controllerTransform = rightHand;
+            else
+                Debug.LogError("VirtualHandAttach: controllerTransform is not assigned and could not be auto-found!");
         }
 
         if (selector == null)
         {
-            Debug.LogError("VirtualHandAttach: selector (RaycastObjectSelector) is not assigned!");
+            // Auto-find RaycastObjectSelector — lives on Right Hand in the persistent XR rig.
+            selector = Object.FindFirstObjectByType<RaycastObjectSelector>();
+            if (selector == null)
+                Debug.LogError("VirtualHandAttach: selector (RaycastObjectSelector) is not assigned and could not be auto-found!");
         }
         
         // Enable input actions
         triggerAction.action.Enable();
         gripAction.action.Enable();
+
+        // Hide virtual hand at startup — XR tracking is not yet fully initialized,
+        // so the controller transform position is unreliable for the first few frames.
+        // Renderers are re-enabled inside StartGoGoMode() on the user's first grab.
+        if (virtualHand != null)
+        {
+            Renderer[] startupRenderers = virtualHand.GetComponentsInChildren<Renderer>();
+            foreach (Renderer rend in startupRenderers)
+                rend.enabled = false;
+        }
 
         CacheControllerRenderers();
     }
@@ -116,7 +151,7 @@ public class VirtualHandAttach : MonoBehaviour
     {
         if (GripReturnPressed())
         {
-            SceneManager.LoadScene("UI");
+            SceneAdditiveManager.SwitchTo("UI");
             return;
         }
 

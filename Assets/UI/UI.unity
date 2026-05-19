@@ -2177,7 +2177,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!1 &1206612554471867045
 GameObject:
   m_ObjectHideFlags: 0
@@ -6610,7 +6610,7 @@ MonoBehaviour:
   rayColor: {r: 0, g: 1, b: 1, a: 1}
   rayWidth: 0.01
   rayActivationDistanceFromHmd: 0
-  activationMargin: -0.5
+  rayActivationFraction: 0.6
   highlightMaterial: {fileID: 2100000, guid: a7b99e86c3ba8b64bb2a8d8f3cb432b4, type: 2}
   disableOtherSceneRays: 1
 --- !u!1 &4694122664204528204
@@ -6718,7 +6718,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!23 &4810015942719968672
 MeshRenderer:
   m_ObjectHideFlags: 0
@@ -7133,7 +7133,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!1 &4967802085941825529
 GameObject:
   m_ObjectHideFlags: 0
@@ -8704,7 +8704,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!33 &6367880158309020139
 MeshFilter:
   m_ObjectHideFlags: 0
@@ -10146,7 +10146,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!33 &7299703468953632935
 MeshFilter:
   m_ObjectHideFlags: 0
@@ -10261,7 +10261,7 @@ MonoBehaviour:
   rayColor: {r: 0, g: 0, b: 0, a: 1}
   rayWidth: 0.01
   rayActivationDistanceFromHmd: 0.12
-  activationMargin: 0.05
+  rayActivationFraction: 0.6
   highlightMaterial: {fileID: 0}
   disableOtherSceneRays: 1
 --- !u!20 &7764865762130675653

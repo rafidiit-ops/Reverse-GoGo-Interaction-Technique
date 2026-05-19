@@ -35,11 +35,23 @@ public class GripReturnToUI : MonoBehaviour
         }
         _instance = this;
         DontDestroyOnLoad(gameObject);
+        SceneManager.sceneLoaded += OnSceneLoaded;
     }
 
     private void OnDestroy()
     {
-        if (_instance == this) _instance = null;
+        if (_instance == this)
+        {
+            SceneManager.sceneLoaded -= OnSceneLoaded;
+            _instance = null;
+        }
+    }
+
+    // Reset the edge-detect state on every scene load so a button held during the
+    // transition never causes an immediate false-positive press in the new scene.
+    private void OnSceneLoaded(Scene scene, LoadSceneMode mode)
+    {
+        _prevAB = true;
     }
 
     private void Update()
@@ -67,15 +79,17 @@ public class GripReturnToUI : MonoBehaviour
         if (pressed)
         {
             Debug.Log("[GripReturnToUI] Right A/B pressed — loading UI scene.");
-            SceneManager.LoadScene(UiSceneName);
+            SceneAdditiveManager.SwitchTo(UiSceneName);
         }
     }
 
     // Returns whether the right-hand A or B button is currently pressed.
+    // Returns true (not false) when the device is absent so that a reconnecting
+    // device with a held button cannot create a spurious rising edge.
     private static bool ReadRightAB()
     {
         InputDevice device = InputDevices.GetDeviceAtXRNode(XRNode.RightHand);
-        if (!device.isValid) return false;
+        if (!device.isValid) return true;  // treat missing device as "held" — no false rising edge
 
         bool a = false;
         bool b = false;

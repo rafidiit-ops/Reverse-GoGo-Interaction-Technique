@@ -203,11 +203,6 @@ public class ControllerRaySceneMenu : MonoBehaviour
         panelRect.anchoredPosition = Vector2.zero;
         panelRect.sizeDelta = new Vector2(460f, 326f);
 
-        // Add a thin collider on the panel so the ray stops at the panel face
-        // instead of passing through the background between buttons.
-        BoxCollider panelCollider = panelObj.AddComponent<BoxCollider>();
-        panelCollider.size = new Vector3(panelRect.sizeDelta.x, panelRect.sizeDelta.y, 0.5f);
-        panelCollider.center = new Vector3(panelRect.sizeDelta.x / 2f, -panelRect.sizeDelta.y / 2f, 0f);
 
         GameObject titleObj = CreateUiObject("Title", panelObj.transform);
         Text title = titleObj.AddComponent<Text>();
@@ -370,7 +365,7 @@ public class ControllerRaySceneMenu : MonoBehaviour
 
         GameObject eventSystem = new GameObject("EventSystem");
         eventSystem.AddComponent<UnityEngine.EventSystems.EventSystem>();
-        eventSystem.AddComponent<UnityEngine.EventSystems.StandaloneInputModule>();
+        eventSystem.AddComponent<UnityEngine.InputSystem.UI.InputSystemUIInputModule>();
         DontDestroyOnLoad(eventSystem);
     }
 
@@ -638,34 +633,24 @@ public class ControllerRaySceneMenu : MonoBehaviour
             return;
         }
 
-        int menuLayer = LayerMask.NameToLayer("MenuButton");
-        if (menuLayer < 0)
-        {
-            menuLayer = LayerMask.NameToLayer("UI");
-        }
-
-        int uiLayer = LayerMask.NameToLayer("UI");
-        int mask = Physics.DefaultRaycastLayers;
-        if (menuLayer >= 0)
-        {
-            mask |= (1 << menuLayer);
-        }
-        if (uiLayer >= 0)
-        {
-            mask |= (1 << uiLayer);
-        }
-
-        // SphereCast adds ~1.5 cm radius tolerance so aiming near a button still registers.
-        const float sphereRadius = 0.015f;
-        if (!Physics.SphereCast(ray, sphereRadius, out RaycastHit hit, RayDistance, mask, QueryTriggerInteraction.Collide))
+        // Raycast against the canvas face plane — more reliable than physics colliders
+        // on a tiny-scale WorldSpace canvas where Z-ordering between the panel and button
+        // BoxColliders causes ambiguous SphereCast hits.
+        Plane canvasPlane = new Plane(-menuCanvas.transform.forward, menuCanvas.transform.position);
+        float enter;
+        if (!canvasPlane.Raycast(ray, out enter) || enter > RayDistance)
         {
             SetRayVisible(true);
             SetRay(ray.origin, ray.origin + ray.direction * RayDistance);
             return;
         }
 
+        Vector3 hitWorld = ray.GetPoint(enter);
         SetRayVisible(true);
-        SetRay(ray.origin, hit.point - ray.direction * RayVisualOffset);
+        SetRay(ray.origin, hitWorld - ray.direction * RayVisualOffset);
+
+        // Convert hit to canvas local space (canvas units, pivot at center).
+        Vector3 hitLocal = menuCanvas.transform.InverseTransformPoint(hitWorld);
 
         for (int i = 0; i < optionButtons.Length; i++)
         {
@@ -675,8 +660,16 @@ public class ControllerRaySceneMenu : MonoBehaviour
                 continue;
             }
 
-            Transform hitT = hit.collider != null ? hit.collider.transform : null;
-            if (hitT == b.transform || (hitT != null && hitT.IsChildOf(b.transform)))
+            RectTransform bRect = b.GetComponent<RectTransform>();
+            // Pivot is top-left (0,1): rect extends +X (right) and -Y (down) from pivot.
+            Vector3 pivotInCanvas = menuCanvas.transform.InverseTransformPoint(b.transform.position);
+            float xMin = pivotInCanvas.x;
+            float xMax = pivotInCanvas.x + bRect.sizeDelta.x;
+            float yMin = pivotInCanvas.y - bRect.sizeDelta.y;
+            float yMax = pivotInCanvas.y;
+
+            if (hitLocal.x >= xMin && hitLocal.x <= xMax &&
+                hitLocal.y >= yMin && hitLocal.y <= yMax)
             {
                 SetSelected(i);
                 return;
@@ -890,20 +883,22 @@ public class ControllerRaySceneMenu : MonoBehaviour
             return;
         }
 
+        // Use additive loading so the persistent XR rig (XR_Persistent scene) is never
+        // destroyed and the OpenXR session stays alive across scene switches.
         bool canLoadByPath = Application.CanStreamedLevelBeLoaded(scenePath);
         bool canLoadByName = Application.CanStreamedLevelBeLoaded(sceneName);
 
         if (canLoadByPath)
         {
-            Debug.Log($"[ControllerRaySceneMenu] Loading scene by path: {scenePath}");
-            SceneManager.LoadScene(scenePath, LoadSceneMode.Single);
+            Debug.Log($"[ControllerRaySceneMenu] Switching to scene by path: {scenePath}");
+            SceneAdditiveManager.SwitchTo(this, scenePath);
             return;
         }
 
         if (canLoadByName)
         {
-            Debug.Log($"[ControllerRaySceneMenu] Loading scene by name: {sceneName}");
-            SceneManager.LoadScene(sceneName, LoadSceneMode.Single);
+            Debug.Log($"[ControllerRaySceneMenu] Switching to scene by name: {sceneName}");
+            SceneAdditiveManager.SwitchTo(this, sceneName);
             return;
         }
 

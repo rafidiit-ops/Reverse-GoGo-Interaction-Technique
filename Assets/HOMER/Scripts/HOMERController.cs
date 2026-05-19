@@ -390,11 +390,25 @@ public class HOMERController : MonoBehaviour
         // Do not auto-assign controllerTransform from raycastSelector.rayOrigin,
         // because rayOrigin may be driven by Reverse GoGo logic in duplicated scenes.
 
-        // Last-resort: use this GameObject's own transform.
+        // Auto-find the persistent right-hand controller (XR_Persistent rig).
+        if (controllerTransform == null)
+        {
+            string[] origins = { "XR Origin (VR)", "XR Origin", "XROrigin" };
+            foreach (string originName in origins)
+            {
+                GameObject o = GameObject.Find(originName);
+                if (o == null) continue;
+                Transform cam = o.transform.Find("Camera Offset");
+                if (cam == null) continue;
+                Transform rh = cam.Find("Right Hand");
+                if (rh != null) { controllerTransform = rh; break; }
+            }
+        }
+
         if (controllerTransform == null)
         {
             controllerTransform = transform;
-            Debug.LogWarning("[HOMERController] controllerTransform was not set. Falling back to this GameObject's transform. Please assign the right-hand controller transform.");
+            Debug.LogWarning("[HOMERController] controllerTransform not found. Falling back to this GameObject's transform.");
         }
     }
 
@@ -421,7 +435,7 @@ public class HOMERController : MonoBehaviour
     {
         if (GripReturnPressed())
         {
-            SceneManager.LoadScene("UI");
+            SceneAdditiveManager.SwitchTo("UI");
             return;
         }
 

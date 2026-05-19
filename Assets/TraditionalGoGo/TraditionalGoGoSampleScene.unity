@@ -3050,7 +3050,7 @@ GameObject:
   - component: {fileID: 842032428}
   - component: {fileID: 842032429}
   m_Layer: 0
-  m_Name: Righjt Hand
+  m_Name: Right Hand
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -4478,7 +4478,7 @@ MonoBehaviour:
   rayColor: {r: 0, g: 0, b: 0, a: 1}
   rayWidth: 0.01
   rayActivationDistanceFromHmd: 0.12
-  activationMargin: 0.05
+  rayActivationFraction: 0.6
   highlightMaterial: {fileID: 0}
   disableOtherSceneRays: 1
 --- !u!1001 &1302976790
@@ -5360,7 +5360,7 @@ MonoBehaviour:
   rayColor: {r: 0, g: 1, b: 1, a: 1}
   rayWidth: 0.01
   rayActivationDistanceFromHmd: 0.12
-  activationMargin: 0.05
+  rayActivationFraction: 0.6
   highlightMaterial: {fileID: 2100000, guid: a7b99e86c3ba8b64bb2a8d8f3cb432b4, type: 2}
   disableOtherSceneRays: 1
 --- !u!4 &1743535475
@@ -6610,7 +6610,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!114 &2118010132
 MonoBehaviour:
   m_ObjectHideFlags: 0
