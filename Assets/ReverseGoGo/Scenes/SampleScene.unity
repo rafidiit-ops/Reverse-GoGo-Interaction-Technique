@@ -5568,7 +5568,7 @@ MonoBehaviour:
   triggerAction:
     m_UseReference: 0
     m_Action:
-      m_Name: 
+      m_Name: Trigger
       m_Type: 0
       m_ExpectedControlType: 
       m_Id: e6b72da1-6ab5-42d0-8e74-2a4287f6136f
