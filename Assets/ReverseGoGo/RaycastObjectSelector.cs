@@ -26,10 +26,31 @@ public class RaycastObjectSelector : MonoBehaviour
     private bool createdLineRenderer;
     private Material fallbackRayMaterial;
 
+    // Searches DontDestroyOnLoad and all loaded scenes for the persistent XR rig's Right Hand.
+    private static Transform FindPersistentRightHand()
+    {
+        string[] origins = { "XR Origin (VR)", "XR Origin", "XROrigin" };
+        foreach (string name in origins)
+        {
+            GameObject o = GameObject.Find(name);
+            if (o == null) continue;
+            Transform cam = o.transform.Find("Camera Offset");
+            if (cam == null) continue;
+            Transform rh = cam.Find("Right Hand");
+            if (rh != null) return rh;
+        }
+        return null;
+    }
+
     void Start()
     {
         if (rayOrigin == null)
-            rayOrigin = transform;
+        {
+            Transform persistentRH = FindPersistentRightHand();
+            rayOrigin = persistentRH != null ? persistentRH : transform;
+            if (persistentRH == null)
+                Debug.LogWarning("[RaycastObjectSelector] rayOrigin not assigned and persistent Right Hand not found. Ray will start from this object.");
+        }
 
         // Always use a dedicated runtime line so legacy/XR line visuals cannot override color.
         GameObject runtimeLineObj = new GameObject("RaycastSelectorRuntimeLine");

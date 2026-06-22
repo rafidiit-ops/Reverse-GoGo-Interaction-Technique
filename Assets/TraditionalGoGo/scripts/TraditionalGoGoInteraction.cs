@@ -1,6 +1,5 @@
 using UnityEngine;
 using UnityEngine.InputSystem;
-using UnityEngine.SceneManagement;
 using UnityEngine.XR;
 
 // Version: 1.0 - Traditional GoGo Implementation
@@ -42,9 +41,15 @@ public class TraditionalGoGoInteraction : MonoBehaviour
     private Quaternion virtualHandRotationOffset = Quaternion.identity;
     private bool hasLockedSurfaceLocalPoint = false;
     private Vector3 lockedSurfaceLocalPoint;
+    private Vector3 grabbedChestPos;              // Chest origin locked at grab time — does not shift with head movement
     private bool hasGrabRigidbodySettings = false;
     private RigidbodyInterpolation preGrabInterpolation;
     private CollisionDetectionMode preGrabCollisionMode;
+    private float _virtualHandRadius = 0.1f; // radius used for OverlapSphere hover detection
+    private float _releaseTime = -999f;       // Time.time when last object was released
+    private const float RegrabGraceDuration = 0.5f; // seconds to keep hover alive after release
+    private Vector3 _chestTransitionFromPos;  // chest pos locked at grab time, lerped back to live after release
+    private GameObject _lastReleasedObject;   // object most recently released; used for unlimited re-grab grace
 
     private bool TryGetSurfacePointFromReference(Collider objCollider, Vector3 referencePosition, out Vector3 surfacePoint)
     {
@@ -114,10 +119,15 @@ public class TraditionalGoGoInteraction : MonoBehaviour
 
     void Start()
     {
-        // Auto-find HMD if not assigned
-        if (hmdTransform == null)
+        // Auto-find HMD if not assigned OR if the assigned camera is in an inactive hierarchy
+        // (scene-assigned objects in the disabled XR Origin never get TrackedPoseDriver updates)
+        if (hmdTransform == null || !hmdTransform.gameObject.activeInHierarchy)
         {
-            hmdTransform = Camera.main.transform;
+            Camera mainCam = Camera.main;
+            if (mainCam != null)
+                hmdTransform = mainCam.transform;
+            else
+                Debug.LogError("TraditionalGoGo: Could not find Camera.main for hmdTransform!");
         }
 
         if (virtualHand == null)
@@ -125,9 +135,23 @@ public class TraditionalGoGoInteraction : MonoBehaviour
             Debug.LogError("TraditionalGoGo: virtualHand is not assigned!");
         }
 
-        if (controllerTransform == null)
+        // Auto-find controller if not assigned OR if it's in an inactive hierarchy
+        // (scene-assigned controller in the disabled XR Origin is never updated by TrackedPoseDriver)
+        if (controllerTransform == null || !controllerTransform.gameObject.activeInHierarchy)
         {
-            Debug.LogError("TraditionalGoGo: controllerTransform is not assigned!");
+            // Find the live Right Hand on the persistent XR rig (DontDestroyOnLoad)
+            string[] xrOriginNames = { "XR Origin (VR)", "XR Origin", "XROrigin" };
+            foreach (string originName in xrOriginNames)
+            {
+                GameObject origin = GameObject.Find(originName);
+                if (origin == null) continue;
+                Transform camOffset = origin.transform.Find("Camera Offset");
+                if (camOffset == null) continue;
+                Transform rh = camOffset.Find("Right Hand");
+                if (rh != null && rh.gameObject.activeInHierarchy) { controllerTransform = rh; break; }
+            }
+            if (controllerTransform == null)
+                Debug.LogError("TraditionalGoGo: controllerTransform is not assigned and could not be auto-found!");
         }
 
         if (virtualHand != null && controllerTransform != null)
@@ -147,11 +171,14 @@ public class TraditionalGoGoInteraction : MonoBehaviour
                 SphereCollider col = virtualHand.gameObject.AddComponent<SphereCollider>();
                 col.isTrigger = true;
                 col.radius = 0.1f;
+                _virtualHandRadius = col.radius;
                 Debug.Log("✅ Added trigger collider to virtual hand");
             }
             else
             {
                 virtualHandCollider.isTrigger = true;
+                if (virtualHandCollider is SphereCollider sc)
+                    _virtualHandRadius = sc.radius;
             }
             
             // Add collision detector component to virtual hand
@@ -196,7 +223,7 @@ public class TraditionalGoGoInteraction : MonoBehaviour
     {
         if (GripReturnPressed())
         {
-            SceneManager.LoadScene("UI");
+            SceneAdditiveManager.SwitchTo("UI");
             return;
         }
 
@@ -230,7 +257,32 @@ public class TraditionalGoGoInteraction : MonoBehaviour
             virtualHand.position = virtualHandPos;
         }
         virtualHand.rotation = controllerTransform.rotation * virtualHandRotationOffset;
-        
+
+        // Hover detection: OverlapSphere is used instead of OnTriggerEnter because the virtual
+        // hand is a static trigger (no Rigidbody) and objects are kinematic Rigidbodies — Unity's
+        // physics matrix does not fire trigger events between static triggers and kinematic Rigidbodies.
+        if (!isGrabbing)
+        {
+            float detectionRadius = Mathf.Max(_virtualHandRadius * virtualHand.lossyScale.x, 0.1f);
+            Collider[] hits = Physics.OverlapSphere(virtualHandPos, detectionRadius, selectableLayers);
+            GameObject hovered = hits.Length > 0 ? hits[0].gameObject : null;
+
+            // Re-grab grace: keep the last released object hoverable for the full grace window.
+            // OverlapSphere can miss after release because the GoGo chest origin switches from
+            // locked→live, shifting virtualHandPos by 50 cm+ at high amplification (k=80).
+            // Using the stored _lastReleasedObject (not touchingObject) makes this reliable
+            // for unlimited consecutive re-grabs without requiring a distance check.
+            if (hovered == null
+                && _lastReleasedObject != null
+                && _lastReleasedObject.activeInHierarchy
+                && Time.time - _releaseTime < RegrabGraceDuration)
+            {
+                hovered = _lastReleasedObject;
+            }
+
+            SetTouchingObject(hovered);
+        }
+
         // Debug log position every 2 seconds
         if (Time.frameCount % 120 == 0)
         {
@@ -262,21 +314,47 @@ public class TraditionalGoGoInteraction : MonoBehaviour
 
     /// <summary>
     /// Calculate virtual hand position using Traditional GoGo formula
+    /// Uses torso-based distance (chest origin) instead of HMD, so head movement doesn't affect reach.
+    /// When grabbing, uses locked chest position from grab time; when free, uses current chest position.
     /// </summary>
     private Vector3 CalculateVirtualHandPosition()
     {
-        // Get real controller distance from HMD
-        float realDistance = Vector3.Distance(hmdTransform.position, controllerTransform.position);
-
-        // Safety check: if too close to HMD, place virtual hand at a safe distance
-        if (realDistance < 0.05f)
+        // Torso origin: 0.2 m below HMD
+        // When grabbing, use the chest position locked at grab time so head movement doesn't shift the object.
+        // After releasing, smoothly interpolate back to the live chest over RegrabGraceDuration.
+        // Without the lerp, the instant locked→live switch amplifies any HMD drift by the GoGo factor
+        // (50+ cm at k=80), causing virtualHandPos to jump away from the dropped object.
+        Vector3 chestPos;
+        if (isGrabbing)
         {
-            // Place virtual hand 0.3m in front of HMD when controller is too close
-            return hmdTransform.position + hmdTransform.forward * 0.3f;
+            chestPos = grabbedChestPos;
+        }
+        else
+        {
+            Vector3 liveChest = hmdTransform.position + Vector3.down * 0.2f;
+            if (_releaseTime > 0f && Time.time - _releaseTime < RegrabGraceDuration)
+            {
+                float t = Mathf.Clamp01((Time.time - _releaseTime) / RegrabGraceDuration);
+                chestPos = Vector3.Lerp(_chestTransitionFromPos, liveChest, t);
+            }
+            else
+            {
+                chestPos = liveChest;
+            }
         }
 
-        // Direction from HMD to controller
-        Vector3 directionFromHMD = (controllerTransform.position - hmdTransform.position).normalized;
+        // Get real controller distance from chest (torso)
+        float realDistance = Vector3.Distance(chestPos, controllerTransform.position);
+
+        // Safety check: if too close to chest, place virtual hand at a safe distance
+        if (realDistance < 0.05f)
+        {
+            // Place virtual hand 0.3m in front of chest when controller is too close
+            return chestPos + (controllerTransform.position - chestPos).normalized * 0.3f;
+        }
+
+        // Direction from chest to controller
+        Vector3 directionFromChest = (controllerTransform.position - chestPos).normalized;
 
         float virtualDistance;
 
@@ -289,17 +367,16 @@ public class TraditionalGoGoInteraction : MonoBehaviour
         {
             // Beyond threshold: Exponential scaling
             // Formula: D_virtual = D_real + k × (D_real - D_threshold)²
-            // This ensures virtual is ALWAYS >= real
             float beyondThreshold = realDistance - threshold;
             float amplification = scalingFactor * Mathf.Pow(beyondThreshold, 2.0f);
-            virtualDistance = realDistance + amplification;  // ADD to real distance, not replace
+            virtualDistance = realDistance + amplification;
 
             // Clamp to maximum extension
             virtualDistance = Mathf.Min(virtualDistance, maxExtension);
         }
 
-        // Calculate virtual hand position
-        Vector3 virtualHandPosition = hmdTransform.position + directionFromHMD * virtualDistance;
+        // Calculate virtual hand position from chest origin
+        Vector3 virtualHandPosition = chestPos + directionFromChest * virtualDistance;
 
         return virtualHandPosition;
     }
@@ -343,22 +420,21 @@ public class TraditionalGoGoInteraction : MonoBehaviour
         currentlyGrabbedObject = obj;
         isGrabbing = true;
         hasLockedSurfaceLocalPoint = false;
+        _releaseTime = -999f; // cancel any active grace period
 
-        // Calculate offset from virtual hand to object
-        grabOffset = obj.transform.position - virtualHandPos;
+        // Lock chest position at grab time so head movement doesn't affect the held object.
+        grabbedChestPos = hmdTransform.position + Vector3.down * 0.2f;
+
+        // Zero grabOffset so the object center stays exactly at VP during drag.
+        // A non-zero offset accumulates errors across multiple re-grabs and causes
+        // the object to drift away from the virtual hand ("controller not attached" bug).
+        grabOffset = Vector3.zero;
         grabRotationOffset = Quaternion.Inverse(virtualHand.rotation) * obj.transform.rotation;
 
         // Disable physics during grab
         Rigidbody rb = obj.GetComponent<Rigidbody>();
         if (rb != null && !rb.isKinematic)
-        {
-            hasGrabRigidbodySettings = true;
-            preGrabInterpolation = rb.interpolation;
-            preGrabCollisionMode = rb.collisionDetectionMode;
-
-            rb.useGravity = false;
-            rb.linearVelocity = Vector3.zero;
-            rb.angularVelocity = Vector3.zero;
+        { rb.angularVelocity = Vector3.zero;
             rb.interpolation = RigidbodyInterpolation.Interpolate;
             rb.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
         }
@@ -370,7 +446,13 @@ public class TraditionalGoGoInteraction : MonoBehaviour
         Collider objCollider = obj.GetComponent<Collider>();
         if (objCollider != null)
         {
-            Vector3 referencePos = controllerTransform != null ? controllerTransform.position : virtualHandPos;
+            // Use controllerTransform.position (real hand) as the surface-point reference.
+            // The real hand is always far from the distant object, so the direction vector is
+            // never near-zero. With grabOffset=0, VP == object center exactly, making VP a
+            // bad reference (dir ≈ 0 → wrong face fallback). The real hand points to the NEAR
+            // face of the object (the face facing the user), so the virtual hand model appears
+            // correctly on that near face during the drag.
+            Vector3 referencePos = controllerTransform != null ? controllerTransform.position : hmdTransform.position;
             Vector3 surfacePoint;
             if (TryGetSurfacePointFromReference(objCollider, referencePos, out surfacePoint))
             {
@@ -413,23 +495,27 @@ public class TraditionalGoGoInteraction : MonoBehaviour
             currentlyGrabbedObject.transform.rotation = targetRotation;
         }
 
-        // Keep hand rigidly attached to one surface point on the object during grab.
-        // This prevents drift when GoGo amplification moves the object faster than the real controller.
-        if (hasLockedSurfaceLocalPoint)
+        // Virtual hand: place on the near face of the object (the face facing the user's real hand).
+        // IMPORTANT: do NOT use Collider.bounds, Collider.Raycast, or Collider.ClosestPoint here.
+        // Those APIs read from Unity's physics-engine state, which is only synchronized at FixedUpdate.
+        // When the object is moved via transform.position inside Update (kinematic objects), the
+        // physics state lags one physics step behind — so all Collider-based methods still return
+        // the PREVIOUS frame's position, leaving the virtual hand frozen while the object moves.
+        // Using transform.position directly is always frame-current.
         {
-            virtualHand.position = currentlyGrabbedObject.transform.TransformPoint(lockedSurfaceLocalPoint);
-        }
-        else
-        {
-            Collider objCollider = currentlyGrabbedObject.GetComponent<Collider>();
-            if (objCollider != null)
+            Vector3 objCenter = currentlyGrabbedObject.transform.position; // always current
+            Vector3 toUser = (controllerTransform != null ? controllerTransform.position : hmdTransform.position)
+                             - objCenter;
+            if (toUser.sqrMagnitude > 0.0001f)
             {
-                Vector3 referencePos = controllerTransform != null ? controllerTransform.position : virtualHandPos;
-                Vector3 surfacePoint;
-                if (TryGetSurfacePointFromReference(objCollider, referencePos, out surfacePoint))
-                {
-                    virtualHand.position = surfacePoint;
-                }
+                toUser.Normalize();
+                // Half-extent of the object in the toward-user direction (works for uniform cube scale).
+                float nearFaceOffset = currentlyGrabbedObject.transform.lossyScale.x * 0.5f;
+                virtualHand.position = objCenter + toUser * nearFaceOffset;
+            }
+            else
+            {
+                virtualHand.position = objCenter; // user is right at the object — put hand at center
             }
         }
 
@@ -467,6 +553,7 @@ public class TraditionalGoGoInteraction : MonoBehaviour
             }
 
             Debug.Log($"🔓 [GoGo] Released: {currentlyGrabbedObject.name}");
+            _lastReleasedObject = currentlyGrabbedObject; // store for unlimited re-grab grace
             currentlyGrabbedObject = null;
 
             // Re-apply hover if virtual hand is still touching something.
@@ -483,6 +570,8 @@ public class TraditionalGoGoInteraction : MonoBehaviour
         isGrabbing = false;
         hasLockedSurfaceLocalPoint = false;
         hasGrabRigidbodySettings = false;
+        _chestTransitionFromPos = grabbedChestPos; // start smooth chest blend from here
+        _releaseTime = Time.time; // start re-grab grace period
     }
 
     public void ForceReleaseForSequenceTransition()
