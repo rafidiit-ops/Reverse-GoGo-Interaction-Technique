@@ -1,24 +1,26 @@
 using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.InputSystem.Controls;
+using UnityEngine.Serialization;
 using UnityEngine.XR;
 using UnityEngine.SceneManagement;
 
 /// <summary>
-/// Toggle between Traditional GoGo and ReverseGoGo interaction modes
+/// Toggle between Traditional GoGo and GoMER interaction modes
 /// Press a button (e.g., Y/B on Quest) to switch between modes
 /// </summary>
 public class GoGoModeToggle : MonoBehaviour
 {
     [Header("Interaction Scripts")]
     public TraditionalGoGoInteraction traditionalGoGo;
-    public VirtualHandAttach reverseGoGo;
+    [FormerlySerializedAs("reverseGoGo")]
+    public VirtualHandAttach goMER;
     
     [Header("Toggle Input")]
     public InputActionProperty toggleAction;  // Assign a button to toggle modes
 
     private const string TraditionalSceneName = "TraditionalGoGoSampleScene";
-    private const string ReverseSceneName = "ReverseGoGo SampleScene";
+    private const string GoMERSceneName = "GoMER SampleScene";
     private const string HomerSceneName = "HOMERStarterScene";
     
     [Header("Current Mode")]
@@ -33,9 +35,9 @@ public class GoGoModeToggle : MonoBehaviour
             Debug.LogError("GoGoModeToggle: TraditionalGoGoInteraction not assigned!");
         }
         
-        if (reverseGoGo == null)
+        if (goMER == null)
         {
-            Debug.LogError("GoGoModeToggle: VirtualHandAttach (ReverseGoGo) not assigned!");
+            Debug.LogError("GoGoModeToggle: VirtualHandAttach (GoMER) not assigned!");
         }
         
         // Enable toggle action
@@ -53,7 +55,7 @@ public class GoGoModeToggle : MonoBehaviour
             SetMode(useTraditionalGoGo);
         }
         
-        Debug.Log($"✅ GoGo Mode Toggle initialized. Current mode: {(useTraditionalGoGo ? "Traditional GoGo" : "ReverseGoGo")}");
+        Debug.Log($"✅ GoGo Mode Toggle initialized. Current mode: {(useTraditionalGoGo ? "Traditional GoGo" : "GoMER")}");
     }
     
     void Update()
@@ -68,7 +70,7 @@ public class GoGoModeToggle : MonoBehaviour
         // Hard-lock technique mapping in the study scenes.
         if (activeScene == TraditionalSceneName)
         {
-            if (!useTraditionalGoGo || (traditionalGoGo != null && !traditionalGoGo.enabled) || (reverseGoGo != null && reverseGoGo.enabled))
+            if (!useTraditionalGoGo || (traditionalGoGo != null && !traditionalGoGo.enabled) || (goMER != null && goMER.enabled))
             {
                 useTraditionalGoGo = true;
                 SetMode(true);
@@ -76,9 +78,9 @@ public class GoGoModeToggle : MonoBehaviour
             return;
         }
 
-        if (activeScene == ReverseSceneName)
+        if (activeScene == GoMERSceneName)
         {
-            if (useTraditionalGoGo || (traditionalGoGo != null && traditionalGoGo.enabled) || (reverseGoGo != null && !reverseGoGo.enabled))
+            if (useTraditionalGoGo || (traditionalGoGo != null && traditionalGoGo.enabled) || (goMER != null && !goMER.enabled))
             {
                 useTraditionalGoGo = false;
                 SetMode(false);
@@ -86,7 +88,7 @@ public class GoGoModeToggle : MonoBehaviour
             return;
         }
 
-        if (activeScene == TraditionalSceneName || activeScene == ReverseSceneName || activeScene == HomerSceneName)
+        if (activeScene == TraditionalSceneName || activeScene == GoMERSceneName || activeScene == HomerSceneName)
         {
             return;
         }
@@ -117,7 +119,7 @@ public class GoGoModeToggle : MonoBehaviour
             return;
         }
 
-        if (activeScene == ReverseSceneName)
+        if (activeScene == GoMERSceneName)
         {
             useTraditionalGoGo = false;
             SetMode(false);
@@ -133,9 +135,9 @@ public class GoGoModeToggle : MonoBehaviour
                 traditionalGoGo.enabled = false;
             }
 
-            if (reverseGoGo != null)
+            if (goMER != null)
             {
-                reverseGoGo.enabled = false;
+                goMER.enabled = false;
             }
 
             modeLockedForScene = true;
@@ -192,12 +194,12 @@ public class GoGoModeToggle : MonoBehaviour
             traditionalGoGo.enabled = traditional;
         }
         
-        if (reverseGoGo != null)
+        if (goMER != null)
         {
-            reverseGoGo.enabled = !traditional;
+            goMER.enabled = !traditional;
         }
         
-        string modeName = traditional ? "Traditional GoGo (Extend to Reach)" : "ReverseGoGo (Retract to Pull)";
+        string modeName = traditional ? "Traditional GoGo (Extend to Reach)" : "GoMER (Retract to Pull)";
         Debug.Log($"🔄 Mode switched to: {modeName}");
     }
     
@@ -211,9 +213,9 @@ public class GoGoModeToggle : MonoBehaviour
     }
     
     /// <summary>
-    /// Public method to switch to ReverseGoGo
+    /// Public method to switch to GoMER
     /// </summary>
-    public void SwitchToReverseGoGo()
+    public void SwitchToGoMER()
     {
         useTraditionalGoGo = false;
         SetMode(false);
@@ -224,6 +226,6 @@ public class GoGoModeToggle : MonoBehaviour
     /// </summary>
     public string GetCurrentModeName()
     {
-        return useTraditionalGoGo ? "Traditional GoGo" : "ReverseGoGo";
+        return useTraditionalGoGo ? "Traditional GoGo" : "GoMER";
     }
 }

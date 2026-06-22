@@ -15,7 +15,7 @@ public class ControllerRaySceneMenu : MonoBehaviour
     private const string UiScenePath = "Assets/UI/UI.unity";
     private const string TraditionalSceneName = "TraditionalGoGoSampleScene";
     private const string TraditionalScenePath = "Assets/TraditionalGoGo/TraditionalGoGoSampleScene.unity";
-    private const string ReverseSceneName = "ReverseGoGo SampleScene";
+    private const string GoMERSceneName = "GoMER SampleScene";
     private const string ReverseScenePath = "Assets/ReverseGoGo/Scenes/SampleScene.unity";
     private const string HomerSceneName = "HOMERStarterScene";
     private const string HomerScenePath = "Assets/HOMER/Scenes/HOMERStarterScene.unity";
@@ -224,7 +224,7 @@ public class ControllerRaySceneMenu : MonoBehaviour
         titleRect.sizeDelta = new Vector2(436f, 36f);
 
         Button traditional = CreateButton(panelObj.transform, "Traditional GoGo", new Vector2(12f, -58f));
-        Button reverse = CreateButton(panelObj.transform, "Reverse GoGo", new Vector2(12f, -114f));
+        Button reverse = CreateButton(panelObj.transform, "GoMER", new Vector2(12f, -114f));
         Button homer = CreateButton(panelObj.transform, "HOMER", new Vector2(12f, -170f));
         Button close = CreateButton(panelObj.transform, "Close", new Vector2(12f, -226f));
 
@@ -236,10 +236,10 @@ public class ControllerRaySceneMenu : MonoBehaviour
             homer.GetComponentInChildren<Text>(),
             close.GetComponentInChildren<Text>()
         };
-        optionNames = new[] { "Traditional GoGo", "Reverse GoGo", "HOMER", "Close" };
+        optionNames = new[] { "Traditional GoGo", "GoMER", "HOMER", "Close" };
 
         traditional.onClick.AddListener(() => LoadTechniqueScene(TraditionalSceneName, TraditionalScenePath));
-        reverse.onClick.AddListener(() => LoadTechniqueScene(ReverseSceneName, ReverseScenePath));
+        reverse.onClick.AddListener(() => LoadTechniqueScene(GoMERSceneName, ReverseScenePath));
         homer.onClick.AddListener(() => LoadTechniqueScene(HomerSceneName, HomerScenePath));
         close.onClick.AddListener(HideMenu);
 
@@ -918,7 +918,7 @@ public class ControllerRaySceneMenu : MonoBehaviour
             return 0;
         }
 
-        if (active.name == ReverseSceneName || active.path == ReverseScenePath)
+        if (active.name == GoMERSceneName || active.path == ReverseScenePath)
         {
             return 1;
         }
@@ -940,7 +940,7 @@ public class ControllerRaySceneMenu : MonoBehaviour
 
         Scene active = SceneManager.GetActiveScene();
         optionButtons[0].interactable = active.name != TraditionalSceneName && active.path != TraditionalScenePath;
-        optionButtons[1].interactable = active.name != ReverseSceneName && active.path != ReverseScenePath;
+        optionButtons[1].interactable = active.name != GoMERSceneName && active.path != ReverseScenePath;
         optionButtons[2].interactable = active.name != HomerSceneName && active.path != HomerScenePath;
         optionButtons[3].interactable = true;
 

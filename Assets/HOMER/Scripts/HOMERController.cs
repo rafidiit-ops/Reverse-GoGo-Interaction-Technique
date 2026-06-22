@@ -12,7 +12,7 @@ using UnityEngine.XR;
 ///   3. While held, controller motion is amplified by that scale so the user can
 ///      reach objects far away with smaller hand movements.
 ///
-/// This script is completely independent of VirtualHandAttach / ReverseGoGo.
+/// This script is completely independent of VirtualHandAttach / GoMER.
 /// Add it to a GameObject in HOMERStarterScene and wire the Inspector references.
 /// It will automatically disable conflicting Reverse-GoGo scripts at Start.
 /// </summary>
@@ -388,7 +388,7 @@ public class HOMERController : MonoBehaviour
 
         // IMPORTANT: keep HOMER mapping source independent from selector ray origin.
         // Do not auto-assign controllerTransform from raycastSelector.rayOrigin,
-        // because rayOrigin may be driven by Reverse GoGo logic in duplicated scenes.
+        // because rayOrigin may be driven by GoMER logic in duplicated scenes.
 
         // Last-resort: use this GameObject's own transform.
         if (controllerTransform == null)

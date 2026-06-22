@@ -74,7 +74,7 @@ public class RaycastObjectSelector : MonoBehaviour
         EnsureLineRendererCanSetPositions();
         ApplyRayVisualSettings();
 
-        // ReverseGoGo behavior: ray appears only when hand is in extension zone and not grabbing.
+        // GoMER behavior: ray appears only when hand is in extension zone and not grabbing.
         bool shouldShowRay = !isGrabbed && IsRayExtensionActive();
 
         // Hide ray when extension is inactive.

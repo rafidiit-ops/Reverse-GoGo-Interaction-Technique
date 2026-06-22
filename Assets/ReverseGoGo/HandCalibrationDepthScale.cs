@@ -6,7 +6,7 @@ using UnityEngine.UI;
 using UnityEngine.XR;
 
 /// <summary>
-/// Hand Calibration and Depth Scaling for ReverseGoGo
+/// Hand Calibration and Depth Scaling for GoMER
 /// 
 /// Implements exponential depth scaling based on controller distance from HMD:
 /// - Threshold: 0.3m from HMD (Meta Quest 2)
@@ -34,7 +34,8 @@ public class HandCalibrationDepthScale : MonoBehaviour
 
     [Header("Scene Restriction")]
     public bool applyCalibrationOnlyInReverseScene = false;
-    public string reverseSceneName = "ReverseGoGo SampleScene";
+    [FormerlySerializedAs("reverseSceneName")]
+    public string goMERSceneName = "GoMER SampleScene";
 
     [Header("Debug UI")]
     [FormerlySerializedAs("showCalibrationOverlay")]
@@ -56,14 +57,14 @@ public class HandCalibrationDepthScale : MonoBehaviour
 
     void Start()
     {
-        // Disable this component entirely when restricted to the Reverse GoGo scene
+        // Disable this component entirely when restricted to the GoMER scene
         // and the current scene is not it.
         if (applyCalibrationOnlyInReverseScene)
         {
             string currentScene = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
-            if (currentScene != reverseSceneName)
+            if (currentScene != goMERSceneName)
             {
-                Debug.Log($"[HandCalibrationDepthScale] Disabled in scene '{currentScene}' (only active in '{reverseSceneName}').");
+                Debug.Log($"[HandCalibrationDepthScale] Disabled in scene '{currentScene}' (only active in '{goMERSceneName}').");
                 enabled = false;
                 return;
             }

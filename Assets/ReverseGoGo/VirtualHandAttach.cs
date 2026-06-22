@@ -250,10 +250,25 @@ public class VirtualHandAttach : MonoBehaviour
         smoothedControllerDelta = Vector3.Lerp(smoothedControllerDelta, controllerDelta, deltaBlend);
         // Already clamped above if controller is stationary
 
-        float rawSpatialGain = isMovingForward
-            ? CalculateForwardSpatialGain(controllerDistanceFromHMD, rangeStart, rangeEnd, initialDistanceToController)
-            : CalculateSpatialGain(objectDistanceFromHMD, depthScale.thresholdDistance);
-        float rangeWeightedGain = isMovingForward ? rawSpatialGain : Mathf.Lerp(1f, rawSpatialGain, rangeT);
+        float rawSpatialGain;
+        float rangeWeightedGain;
+        if (isMovingForward)
+        {
+            // Forward gain is anchored to the grab-time object distance so the amplification
+            // matches what was felt when the object was first selected (e.g. 10 m → 33×).
+            // Once the object surpasses its original distance the gain keeps growing, giving
+            // the same exponential feel as pulling in the outward direction.
+            float grabGain    = Mathf.Max(1f, initialDistanceToController / depthScale.thresholdDistance);
+            float currentGain = CalculateSpatialGain(objectDistanceFromHMD, depthScale.thresholdDistance);
+            rawSpatialGain    = Mathf.Max(grabGain, currentGain);
+            rangeWeightedGain = rawSpatialGain; // no near-hand attenuation while pushing out
+        }
+        else
+        {
+            // Pull gain: decreases as object approaches – high when far, 1× at threshold.
+            rawSpatialGain    = CalculateSpatialGain(objectDistanceFromHMD, depthScale.thresholdDistance);
+            rangeWeightedGain = Mathf.Lerp(1f, rawSpatialGain, rangeT);
+        }
 
         float gainBlend = 1f - Mathf.Exp(-adaptiveGainSmoothing * dt);
         smoothedSpatialGain = Mathf.Lerp(smoothedSpatialGain, rangeWeightedGain, gainBlend);
@@ -387,20 +402,6 @@ public class VirtualHandAttach : MonoBehaviour
         return Mathf.Max(1f, objectDistance / safeThreshold);
     }
 
-    private float CalculateForwardSpatialGain(float controllerDistance, float rangeStart, float rangeEnd, float initialObjectDistance)
-    {
-        if (controllerDistance <= rangeStart)
-        {
-            return 1f;
-        }
-
-        float safeThreshold = Mathf.Max(0.001f, rangeEnd);
-        float maxForwardGain = Mathf.Max(1f, initialObjectDistance / safeThreshold);
-        float rangeT = Mathf.Clamp01((controllerDistance - rangeStart) / Mathf.Max(rangeEnd - rangeStart, 0.001f));
-
-        // Forward gain ramps from 1x near the hand to the original object-distance gain at full extension.
-        return Mathf.Lerp(1f, maxForwardGain, rangeT);
-    }
 
 
     private float CalculateGoGoDistance(float realDistance)

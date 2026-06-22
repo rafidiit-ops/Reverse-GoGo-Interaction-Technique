@@ -12,7 +12,7 @@ public class SceneToggleRuntimeUI : MonoBehaviour
 {
     private static bool RuntimeMenuEnabled = false;
     private const string TraditionalSceneName = "TraditionalGoGoSampleScene";
-    private const string ReverseSceneName = "ReverseGoGo SampleScene";
+    private const string GoMERSceneName = "GoMER SampleScene";
     private const string HomerSceneName = "HOMERStarterScene";
     private const float MaxControllerRayDistance = 3f;
     private const float RayHitVisualOffset = 0.01f;
@@ -25,7 +25,7 @@ public class SceneToggleRuntimeUI : MonoBehaviour
     private Transform rightControllerRayTransform;
     private Transform leftControllerRayTransform;
     private Button traditionalButton;
-    private Button reverseButton;
+    private Button goMERButton;
     private Button homerButton;
     private Button exitButton;
     private Button[] optionButtons;
@@ -204,18 +204,18 @@ public class SceneToggleRuntimeUI : MonoBehaviour
         titleRect.sizeDelta = new Vector2(436f, 36f);
 
         traditionalButton = CreateButton(panelObject.transform, "Traditional GoGo", new Vector2(12f, -58f));
-        reverseButton = CreateButton(panelObject.transform, "Reverse GoGo", new Vector2(12f, -114f));
+        goMERButton = CreateButton(panelObject.transform, "GoMER", new Vector2(12f, -114f));
         homerButton = CreateButton(panelObject.transform, "HOMER", new Vector2(12f, -170f));
         exitButton = CreateButton(panelObject.transform, "Exit", new Vector2(12f, -226f));
-        optionButtons = new[] { traditionalButton, reverseButton, homerButton, exitButton };
+        optionButtons = new[] { traditionalButton, goMERButton, homerButton, exitButton };
         optionLabels = new[]
         {
             traditionalButton.GetComponentInChildren<Text>(),
-            reverseButton.GetComponentInChildren<Text>(),
+            goMERButton.GetComponentInChildren<Text>(),
             homerButton.GetComponentInChildren<Text>(),
             exitButton.GetComponentInChildren<Text>()
         };
-        baseOptionLabels = new[] { "Traditional GoGo", "Reverse GoGo", "HOMER", "Exit" };
+        baseOptionLabels = new[] { "Traditional GoGo", "GoMER", "HOMER", "Exit" };
 
         GameObject hintObj = CreateUiObject("Hint", panelObject.transform);
         hintText = hintObj.AddComponent<Text>();
@@ -232,7 +232,7 @@ public class SceneToggleRuntimeUI : MonoBehaviour
         hintRect.sizeDelta = new Vector2(436f, 36f);
 
         traditionalButton.onClick.AddListener(() => SwitchToTechnique(TraditionalSceneName));
-        reverseButton.onClick.AddListener(() => SwitchToTechnique(ReverseSceneName));
+        goMERButton.onClick.AddListener(() => SwitchToTechnique(GoMERSceneName));
         homerButton.onClick.AddListener(() => SwitchToTechnique(HomerSceneName));
         exitButton.onClick.AddListener(ExitApplication);
 
@@ -659,7 +659,7 @@ public class SceneToggleRuntimeUI : MonoBehaviour
         string active = SceneManager.GetActiveScene().name;
         if (active == TraditionalSceneName)
             return 0;
-        if (active == ReverseSceneName)
+        if (active == GoMERSceneName)
             return 1;
         if (active == HomerSceneName)
             return 2;
@@ -745,12 +745,12 @@ public class SceneToggleRuntimeUI : MonoBehaviour
 
     private void RefreshButtonState()
     {
-        if (traditionalButton == null || reverseButton == null || homerButton == null)
+        if (traditionalButton == null || goMERButton == null || homerButton == null)
             return;
 
         string active = SceneManager.GetActiveScene().name;
         traditionalButton.interactable = active != TraditionalSceneName;
-        reverseButton.interactable = active != ReverseSceneName;
+        goMERButton.interactable = active != GoMERSceneName;
         homerButton.interactable = active != HomerSceneName;
         SetSelectedOption(GetDefaultSelectedOption());
     }

@@ -3,7 +3,7 @@ using UnityEngine.InputSystem;
 
 /// <summary>
 /// HOMER interaction: ray-based remote selection + seamless hand-centric manipulation.
-/// This script is isolated from Reverse Go-Go so you can iterate safely.
+/// This script is isolated from GoMER so you can iterate safely.
 /// </summary>
 public class HOMERInteraction : MonoBehaviour
 {

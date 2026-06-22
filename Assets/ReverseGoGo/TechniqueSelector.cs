@@ -1,8 +1,9 @@
 using UnityEngine;
+using UnityEngine.Serialization;
 using UnityEngine.UI;
 
 /// <summary>
-/// In-game UI system for selecting between Traditional GoGo and ReverseGoGo interaction techniques.
+/// In-game UI system for selecting between Traditional GoGo and GoMER interaction techniques.
 /// Displays two buttons at runtime - only one technique can be active at a time.
 /// </summary>
 public class TechniqueSelector : MonoBehaviour
@@ -11,15 +12,17 @@ public class TechniqueSelector : MonoBehaviour
     [Tooltip("GameObject with TraditionalGoGoInteraction component")]
     public GameObject traditionalGoGoManager;
     
-    [Tooltip("GameObject with VirtualHandAttach component (ReverseGoGo)")]
-    public GameObject reverseGoGoManager;
+    [Tooltip("GameObject with VirtualHandAttach component (GoMER)")]
+    [FormerlySerializedAs("reverseGoGoManager")]
+    public GameObject goMERManager;
 
     [Header("UI References")]
     [Tooltip("Button to activate Traditional GoGo")]
     public Button traditionalGoGoButton;
     
-    [Tooltip("Button to activate ReverseGoGo")]
-    public Button reverseGoGoButton;
+    [Tooltip("Button to activate GoMER")]
+    [FormerlySerializedAs("reverseGoGoButton")]
+    public Button goMERButton;
 
     [Header("UI Settings")]
     [Tooltip("Hide UI after selection (automatically after 2 seconds)")]
@@ -52,9 +55,9 @@ public class TechniqueSelector : MonoBehaviour
             Debug.LogError("❌ TechniqueSelector: traditionalGoGoManager not assigned!");
         }
 
-        if (reverseGoGoManager == null)
+        if (goMERManager == null)
         {
-            Debug.LogError("❌ TechniqueSelector: reverseGoGoManager not assigned!");
+            Debug.LogError("❌ TechniqueSelector: goMERManager not assigned!");
         }
 
         if (traditionalGoGoButton == null)
@@ -62,9 +65,9 @@ public class TechniqueSelector : MonoBehaviour
             Debug.LogError("❌ TechniqueSelector: traditionalGoGoButton not assigned!");
         }
 
-        if (reverseGoGoButton == null)
+        if (goMERButton == null)
         {
-            Debug.LogError("❌ TechniqueSelector: reverseGoGoButton not assigned!");
+            Debug.LogError("❌ TechniqueSelector: goMERButton not assigned!");
         }
 
         // Setup button listeners
@@ -73,9 +76,9 @@ public class TechniqueSelector : MonoBehaviour
             traditionalGoGoButton.onClick.AddListener(SelectTraditionalGoGo);
         }
 
-        if (reverseGoGoButton != null)
+        if (goMERButton != null)
         {
-            reverseGoGoButton.onClick.AddListener(SelectReverseGoGo);
+            goMERButton.onClick.AddListener(SelectGoMER);
         }
 
         // Initially disable both techniques until user selects
@@ -84,9 +87,9 @@ public class TechniqueSelector : MonoBehaviour
             traditionalGoGoManager.SetActive(false);
         }
 
-        if (reverseGoGoManager != null)
+        if (goMERManager != null)
         {
-            reverseGoGoManager.SetActive(false);
+            goMERManager.SetActive(false);
         }
 
         Debug.Log("✅ TechniqueSelector initialized. Please select an interaction technique.");
@@ -111,10 +114,10 @@ public class TechniqueSelector : MonoBehaviour
             traditionalGoGoManager.SetActive(true);
         }
 
-        // Disable ReverseGoGo
-        if (reverseGoGoManager != null)
+        // Disable GoMER
+        if (goMERManager != null)
         {
-            reverseGoGoManager.SetActive(false);
+            goMERManager.SetActive(false);
         }
 
         // Update button visuals
@@ -131,9 +134,9 @@ public class TechniqueSelector : MonoBehaviour
     }
 
     /// <summary>
-    /// Activate ReverseGoGo technique
+    /// Activate GoMER technique
     /// </summary>
-    public void SelectReverseGoGo()
+    public void SelectGoMER()
     {
         if (techniqueSelected)
         {
@@ -141,12 +144,12 @@ public class TechniqueSelector : MonoBehaviour
             return;
         }
 
-        Debug.Log("🎯 User selected: ReverseGoGo (Retract hand to pull distant objects)");
+        Debug.Log("🎯 User selected: GoMER (Retract hand to pull distant objects)");
 
-        // Enable ReverseGoGo
-        if (reverseGoGoManager != null)
+        // Enable GoMER
+        if (goMERManager != null)
         {
-            reverseGoGoManager.SetActive(true);
+            goMERManager.SetActive(true);
         }
 
         // Disable Traditional GoGo
@@ -180,11 +183,11 @@ public class TechniqueSelector : MonoBehaviour
             traditionalGoGoButton.colors = colors;
         }
 
-        if (reverseGoGoButton != null)
+        if (goMERButton != null)
         {
-            ColorBlock colors = reverseGoGoButton.colors;
+            ColorBlock colors = goMERButton.colors;
             colors.normalColor = traditionalSelected ? unselectedColor : selectedColor;
-            reverseGoGoButton.colors = colors;
+            goMERButton.colors = colors;
         }
     }
 
@@ -248,9 +251,9 @@ public class TechniqueSelector : MonoBehaviour
             traditionalGoGoButton.onClick.RemoveListener(SelectTraditionalGoGo);
         }
 
-        if (reverseGoGoButton != null)
+        if (goMERButton != null)
         {
-            reverseGoGoButton.onClick.RemoveListener(SelectReverseGoGo);
+            goMERButton.onClick.RemoveListener(SelectGoMER);
         }
     }
 }

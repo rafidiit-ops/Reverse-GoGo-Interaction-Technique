@@ -12,7 +12,7 @@ public class UIStudyMenuController : MonoBehaviour
 {
     private const string UiSceneName = "UI";
     private const string TraditionalSceneName = "TraditionalGoGoSampleScene";
-    private const string ReverseSceneName = "ReverseGoGo SampleScene";
+    private const string GoMERSceneName = "GoMER SampleScene";
 
     private readonly List<Button> orderedButtons = new List<Button>();
     private int selectedIndex;
@@ -142,7 +142,7 @@ public class UIStudyMenuController : MonoBehaviour
         orderedButtons.Clear();
 
         Button traditional = FindButtonByLabel("Traditional GoGo");
-        Button reverse = FindButtonByLabel("Reverse GoGo");
+        Button reverse = FindButtonByLabel("GoMER");
         Button virtualHand = FindButtonByLabel("Virtual Hand");
         Button quit = FindButtonByLabel("Quit");
 
@@ -182,7 +182,7 @@ public class UIStudyMenuController : MonoBehaviour
         orderedButtons[0].onClick.AddListener(() => SceneManager.LoadScene(TraditionalSceneName, LoadSceneMode.Single));
 
         orderedButtons[1].onClick.RemoveAllListeners();
-        orderedButtons[1].onClick.AddListener(() => SceneManager.LoadScene(ReverseSceneName, LoadSceneMode.Single));
+        orderedButtons[1].onClick.AddListener(() => SceneManager.LoadScene(GoMERSceneName, LoadSceneMode.Single));
 
         // Virtual hand uses the traditional GoGo scene where virtual-hand interaction is configured.
         orderedButtons[2].onClick.RemoveAllListeners();
