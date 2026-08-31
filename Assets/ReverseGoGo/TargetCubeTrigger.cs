@@ -125,6 +125,14 @@ public class TargetCubeTrigger : MonoBehaviour
         OnObjectPlaced?.Invoke(placedObject, targetColor, isCorrect);
     }
 
+    // Resets state so the same target can be reused in the next trial.
+    public void ResetForNextTrial()
+    {
+        StopAllCoroutines();
+        _placementPending = false;
+        SetHover(false);
+    }
+
     private void OnTriggerExit(Collider other)
     {
         if (!_placementPending)

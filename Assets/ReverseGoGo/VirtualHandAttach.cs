@@ -32,6 +32,10 @@ public class VirtualHandAttach : MonoBehaviour
     public float nearHandResponsivenessMultiplier = 2.5f; // Higher response when object is near threshold
     public float nearHandConvergenceSpeed = 8f;           // Pulls object toward controller near threshold
 
+    [Header("Center Direction Mapping")]
+    [Tooltip("Keep the initial angular offset between controller and object. Disable for placement studies so the object follows the controller direction absolutely.")]
+    public bool useCenterDirectionMapping = false;
+
     [Header("Controller Visuals")]
     public bool hideControllerWhileAttached = true;
 
@@ -191,159 +195,36 @@ public class VirtualHandAttach : MonoBehaviour
         if (depthScale == null)
             return;
 
-        // 3D spatial mapping: controller delta moves object delta in X/Y/Z.
-        // Gain follows calibrated range and decreases as object comes closer.
-        float dt = Mathf.Max(Time.deltaTime, 0.0001f);
-
-        Vector3 hmdPosition = Camera.main.transform.position;
-        float previousControllerDistanceFromHMD = Vector3.Distance(previousControllerPosition, hmdPosition);
-        Vector3 controllerDelta = controllerTransform.position - previousControllerPosition;
-        previousControllerPosition = controllerTransform.position;
-
-        // If controller is not moving (below threshold), do not update object position at all
-        const float stationaryEpsilon = 0.0005f; // meters/frame
-        if (controllerDelta.magnitude < stationaryEpsilon)
-        {
-            smoothedControllerDelta = Vector3.zero;
-            // Do not update object position or gain, just return
+        Vector3 hmdPos = Camera.main.transform.position;
+        float controllerDist = Vector3.Distance(controllerTransform.position, hmdPos);
+        if (controllerDist < 0.001f)
             return;
-        }
 
-        float safeThreshold = Mathf.Max(0.001f, depthScale.thresholdDistance);
-        float rangeStart = Mathf.Max(0.001f, directGrabDistance);
-        float rangeEnd = Mathf.Max(rangeStart + 0.001f, safeThreshold);
+        // GoMER mapping: virtual hand extends/contracts based on CalculateGoGoDistance.
+        // Object position = virtualHandPos + grabOffset (constant offset locked at grab time).
+        Vector3 controllerDir = (controllerTransform.position - hmdPos).normalized;
+        float virtualDist = CalculateGoGoDistance(controllerDist);
+        Vector3 virtualHandPos = hmdPos + controllerDir * virtualDist;
+        Vector3 targetPos = virtualHandPos + grabOffset;
 
-        float objectDistanceFromHMD = Vector3.Distance(currentlyGrabbedObject.transform.position, hmdPosition);
-        float controllerDistanceFromHMD = Vector3.Distance(controllerTransform.position, hmdPosition);
-        float controllerRadialDelta = controllerDistanceFromHMD - previousControllerDistanceFromHMD;
-        if (controllerRadialDelta > forwardDirectionDeadzone)
-        {
-            isForwardModeLatched = true;
-        }
-        else if (controllerRadialDelta < -forwardDirectionDeadzone)
-        {
-            isForwardModeLatched = false;
-        }
-        bool isMovingForward = isForwardModeLatched;
+        Quaternion rotDelta = controllerTransform.rotation * Quaternion.Inverse(initialControllerRotation);
+        Quaternion targetRotation = rotDelta * initialObjectRotation;
 
-        // Capture start point when entering forward mode so extension can recover
-        // exactly from the current pulled radius back to the original grab radius.
-        if (isMovingForward && !wasMovingForwardLastFrame)
-        {
-            forwardRecoveryStartRadius = objectDistanceFromHMD;
-            forwardRecoveryStartControllerRadius = controllerDistanceFromHMD;
-        }
-
-        // 0 at direct-grab distance, 1 at calibrated arm length.
-        float rangeT = Mathf.Clamp01((controllerDistanceFromHMD - rangeStart) / (rangeEnd - rangeStart));
-        float nearHand01 = 1f - rangeT;
-
-        float adaptiveDeltaSmoothing = isMovingForward
-            ? forwardDeltaSmoothing
-            : controllerDeltaSmoothing * Mathf.Lerp(1f, nearHandResponsivenessMultiplier, nearHand01);
-        float adaptiveGainSmoothing = isMovingForward
-            ? forwardGainSmoothing
-            : gainSmoothing * Mathf.Lerp(1f, nearHandResponsivenessMultiplier, nearHand01);
-
-
-        float deltaBlend = 1f - Mathf.Exp(-adaptiveDeltaSmoothing * dt);
-        smoothedControllerDelta = Vector3.Lerp(smoothedControllerDelta, controllerDelta, deltaBlend);
-        // Already clamped above if controller is stationary
-
-        float rawSpatialGain;
-        float rangeWeightedGain;
-        if (isMovingForward)
-        {
-            // Forward gain is anchored to the grab-time object distance so the amplification
-            // matches what was felt when the object was first selected (e.g. 10 m → 33×).
-            // Once the object surpasses its original distance the gain keeps growing, giving
-            // the same exponential feel as pulling in the outward direction.
-            float grabGain    = Mathf.Max(1f, initialDistanceToController / depthScale.thresholdDistance);
-            float currentGain = CalculateSpatialGain(objectDistanceFromHMD, depthScale.thresholdDistance);
-            rawSpatialGain    = Mathf.Max(grabGain, currentGain);
-            rangeWeightedGain = rawSpatialGain; // no near-hand attenuation while pushing out
-        }
-        else
-        {
-            // Pull gain: decreases as object approaches – high when far, 1× at threshold.
-            rawSpatialGain    = CalculateSpatialGain(objectDistanceFromHMD, depthScale.thresholdDistance);
-            rangeWeightedGain = Mathf.Lerp(1f, rawSpatialGain, rangeT);
-        }
-
-        float gainBlend = 1f - Mathf.Exp(-adaptiveGainSmoothing * dt);
-        smoothedSpatialGain = Mathf.Lerp(smoothedSpatialGain, rangeWeightedGain, gainBlend);
-
-
-        Vector3 scaledDelta = smoothedControllerDelta * smoothedSpatialGain;
-        Vector3 targetPos = currentlyGrabbedObject.transform.position + scaledDelta;
-
-        // Debug: Log values if controller is stable but object is moving
-        if (smoothedControllerDelta == Vector3.zero && scaledDelta.magnitude > 0.0001f)
-        {
-            Debug.LogWarning($"[GoGo] Drift detected: smoothedControllerDelta=0, smoothedSpatialGain={smoothedSpatialGain}, scaledDelta={scaledDelta}");
-        }
-        else if (smoothedControllerDelta.magnitude > 0f && scaledDelta.magnitude > 0.0001f)
-        {
-            Debug.Log($"[GoGo] smoothedControllerDelta={smoothedControllerDelta}, smoothedSpatialGain={smoothedSpatialGain}, scaledDelta={scaledDelta}");
-        }
-
-        // In the calibrated range, add convergence toward controller near the hand side.
-        if (!isMovingForward && nearHand01 > 0f)
-        {
-            Vector3 toController = controllerTransform.position - currentlyGrabbedObject.transform.position;
-            targetPos += toController * nearHandConvergenceSpeed * nearHand01 * dt;
-        }
-
-        // Center-based directional mapping:
-        // keep mapped radius from gain logic, but lock direction to controller direction from HMD.
-        // This balances left/right gain and ensures a closed 360 path returns to the same position.
-        if (controllerDistanceFromHMD > rangeStart)
-        {
-            float mappedRadius = Vector3.Distance(targetPos, hmdPosition);
-            Vector3 controllerFromCenter = controllerTransform.position - hmdPosition;
-            if (mappedRadius > 0.000001f && controllerFromCenter.sqrMagnitude > 0.000001f)
-            {
-                Vector3 mappedDirection = centerDirectionOffset * controllerFromCenter.normalized;
-                targetPos = hmdPosition + mappedDirection * mappedRadius;
-            }
-        }
-
-        // Below minimum distance, behave as direct hand grab.
-        if (controllerDistanceFromHMD <= rangeStart)
-        {
-            targetPos = controllerTransform.position;
-            smoothedSpatialGain = 1f;
-        }
-
-        wasMovingForwardLastFrame = isMovingForward;
-        
-        // Apply rotation based on controller rotation changes
-        Quaternion currentControllerRotation = controllerTransform.rotation;
-        Quaternion rotationDelta = currentControllerRotation * Quaternion.Inverse(initialControllerRotation);
-        Quaternion targetRotation = rotationDelta * initialObjectRotation;
-        
-        // Move object toward target using physics.
-        // Velocity = scaledDelta / dt so the object covers the full amplified distance in one frame.
+        float dt = Mathf.Max(Time.deltaTime, 0.0001f);
         Rigidbody rb = currentlyGrabbedObject.GetComponent<Rigidbody>();
         if (rb != null && !rb.isKinematic)
         {
             Vector3 desiredVelocity = (targetPos - currentlyGrabbedObject.transform.position) / dt;
             rb.linearVelocity = Vector3.ClampMagnitude(desiredVelocity, maxLinearSpeed);
-
-            // Apply rotation
             currentlyGrabbedObject.transform.rotation = targetRotation;
         }
         else
         {
-            // Input is already smoothed; set position directly so no additional lag.
             currentlyGrabbedObject.transform.position = targetPos;
             currentlyGrabbedObject.transform.rotation = targetRotation;
         }
-        
-        // Position virtual hand visual at object location
-        // (virtualHand is parented to the object — position is maintained automatically)
-        
-        // Match virtual hand rotation to controller rotation
+
+        // virtualHand is parented to the object; only rotation needs manual sync.
         virtualHand.rotation = controllerTransform.rotation;
     }
 
