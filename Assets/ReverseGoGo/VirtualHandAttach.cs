@@ -25,6 +25,11 @@ public class VirtualHandAttach : MonoBehaviour
     [Header("Calibration Range")]
     public float directGrabDistance = 0.1f;       // Below this, object behaves like direct hand grab
 
+    [Header("Go-Go Mapping")]
+    [Tooltip("How aggressively distance amplifies beyond the calibrated threshold. Traditional Go-Go uses 20.")]
+    public float goGoScalingFactor = 20f;         // k in: virtual = threshold + k * (beyond)^power
+    public float goGoExponentialPower = 2f;       // power curve — 2 = quadratic (smooth ramp, no snap)
+
     [Header("Direct Grab Targeting")]
     public float directGrabSelectionRadius = 0.12f; // Fallback selection radius when ray is hidden near hand
 
@@ -61,6 +66,8 @@ public class VirtualHandAttach : MonoBehaviour
     private bool wasMovingForwardLastFrame = false;
     private float forwardRecoveryStartRadius = 0f;
     private float forwardRecoveryStartControllerRadius = 0f;
+    private Vector3 forwardGrabOffset = Vector3.zero;  // Offset baked in on entering forward mode; keeps position continuous
+    private Vector3 smoothedForwardTargetPos;          // Low-pass filtered forward-mode target position
     private Renderer[] controllerRenderers;
 
     // Public accessors for UserStudyManager
@@ -195,22 +202,42 @@ public class VirtualHandAttach : MonoBehaviour
         if (depthScale == null)
             return;
 
-        Vector3 hmdPos = Camera.main.transform.position;
-        float controllerDist = Vector3.Distance(controllerTransform.position, hmdPos);
-        if (controllerDist < 0.001f)
-            return;
-
-        // GoMER mapping: virtual hand extends/contracts based on CalculateGoGoDistance.
-        // Object position = virtualHandPos + grabOffset (constant offset locked at grab time).
-        Vector3 controllerDir = (controllerTransform.position - hmdPos).normalized;
-        float virtualDist = CalculateGoGoDistance(controllerDist);
-        Vector3 virtualHandPos = hmdPos + controllerDir * virtualDist;
-        Vector3 targetPos = virtualHandPos + grabOffset;
-
-        Quaternion rotDelta = controllerTransform.rotation * Quaternion.Inverse(initialControllerRotation);
-        Quaternion targetRotation = rotDelta * initialObjectRotation;
-
+        // Pure Go-Go mapping: the object's mapped position is a direct function of the
+        // controller's CURRENT distance from the HMD — identical formula whether the hand
+        // is extending, retracting, or moving sideways. No forward/pull mode split.
         float dt = Mathf.Max(Time.deltaTime, 0.0001f);
+        Vector3 hmdPosition = Camera.main.transform.position;
+        float controllerDistanceFromHMD = Vector3.Distance(controllerTransform.position, hmdPosition);
+        float rangeStart = Mathf.Max(0.001f, directGrabDistance);
+
+        Vector3 targetPos;
+
+        if (controllerDistanceFromHMD <= rangeStart)
+        {
+            // Below minimum distance, behave as direct hand grab.
+            targetPos = controllerTransform.position;
+            smoothedSpatialGain = 1f;
+        }
+        else
+        {
+            float mappedHandDistance = CalculateGoGoDistance(controllerDistanceFromHMD);
+            Vector3 controllerDirection = (controllerTransform.position - hmdPosition).normalized;
+            targetPos = hmdPosition + controllerDirection * mappedHandDistance + grabOffset;
+            smoothedSpatialGain = Mathf.Max(1f, mappedHandDistance / Mathf.Max(0.001f, depthScale.thresholdDistance));
+        }
+
+        // Low-pass filter the mapped position so controller jitter doesn't snap the object;
+        // same smoothing rate applies regardless of movement direction.
+        float posBlend = 1f - Mathf.Exp(-controllerDeltaSmoothing * dt);
+        smoothedForwardTargetPos = Vector3.Lerp(smoothedForwardTargetPos, targetPos, posBlend);
+        targetPos = smoothedForwardTargetPos;
+
+        // Apply rotation based on controller rotation changes
+        Quaternion currentControllerRotation = controllerTransform.rotation;
+        Quaternion rotationDelta = currentControllerRotation * Quaternion.Inverse(initialControllerRotation);
+        Quaternion targetRotation = rotationDelta * initialObjectRotation;
+        
+        // Move object toward target using physics.
         Rigidbody rb = currentlyGrabbedObject.GetComponent<Rigidbody>();
         if (rb != null && !rb.isKinematic)
         {
@@ -300,11 +327,11 @@ public class VirtualHandAttach : MonoBehaviour
         }
         else
         {
-            // Beyond threshold: LINEAR GAIN for dramatic exponential effect
-            // Formula: virtual_distance = threshold + k * (real_distance - threshold)
-            // With k=10: 10cm real movement beyond threshold = 1m virtual movement
+            // Beyond threshold: quadratic ramp (same family as Traditional Go-Go) so the growth
+            // rate starts at zero right at the threshold and builds up smoothly — no velocity
+            // snap at the boundary like a linear multiplier would produce.
             float distanceBeyondThreshold = realDistance - depthScale.thresholdDistance;
-            float amplifiedDistance = depthScale.maxScalingFactor * distanceBeyondThreshold;
+            float amplifiedDistance = goGoScalingFactor * Mathf.Pow(distanceBeyondThreshold, goGoExponentialPower);
             return depthScale.thresholdDistance + amplifiedDistance;
         }
     }
@@ -354,6 +381,8 @@ public class VirtualHandAttach : MonoBehaviour
         wasMovingForwardLastFrame = false;
         forwardRecoveryStartRadius = 0f;
         forwardRecoveryStartControllerRadius = 0f;
+        forwardGrabOffset = Vector3.zero;
+        smoothedForwardTargetPos = Vector3.zero;
     }
 
     /// <summary>
@@ -397,6 +426,7 @@ public class VirtualHandAttach : MonoBehaviour
         smoothedControllerDelta = Vector3.zero;
         smoothedSpatialGain = 1f;
         wasMovingForwardLastFrame = false;
+        forwardGrabOffset = Vector3.zero;
         cubeStartPos = objectToGrab.transform.position;         // Object's starting position
         initialHMDPosition = Camera.main.transform.position;    // HMD position at grab
         
@@ -419,6 +449,7 @@ public class VirtualHandAttach : MonoBehaviour
         
         // Calculate and store grab offset (constant during entire grab)
         grabOffset = cubeStartPos - initialVirtualHandPos;
+        smoothedForwardTargetPos = cubeStartPos; // avoid a lerp-in pop on the first movement frame
 
         // Preserve the initial angular difference between controller direction and object direction
         // around the HMD center to prevent a jump on the first attached frame.

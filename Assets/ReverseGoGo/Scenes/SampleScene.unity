@@ -3166,7 +3166,6 @@ MonoBehaviour:
   forwardDeltaSmoothing: 18
   forwardGainSmoothing: 12
   directGrabDistance: 0.1
-  forwardScalingFactor: 20
   directGrabSelectionRadius: 0.12
   nearHandResponsivenessMultiplier: 2.5
   nearHandConvergenceSpeed: 8
@@ -7249,7 +7248,6 @@ MonoBehaviour:
   forwardDeltaSmoothing: 18
   forwardGainSmoothing: 12
   directGrabDistance: 0.1
-  forwardScalingFactor: 20
   directGrabSelectionRadius: 0.12
   nearHandResponsivenessMultiplier: 2.5
   nearHandConvergenceSpeed: 8
@@ -7275,6 +7273,7 @@ GameObject:
   - component: {fileID: 4505992493387069075}
   - component: {fileID: 8957125669210255859}
   - component: {fileID: 9170803137185569820}
+  - component: {fileID: 9170803137185569821}
   m_Layer: 0
   m_Name: XR Origin (VR)
   m_TagString: Untagged
@@ -8240,7 +8239,7 @@ Transform:
   m_GameObject: {fileID: 3706570457822996099}
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
-  m_LocalPosition: {x: 1.0508499, y: 0.971, z: -6.653}
+  m_LocalPosition: {x: 1.473, y: 1.289, z: -8.419}
   m_LocalScale: {x: 0.1, y: 0.1, z: 0.1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -9086,6 +9085,21 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 1d0254775cd473f4a86bdb5ff397a199, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::ControllerTrackingDiagnostic
+--- !u!114 &9170803137185569821
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6365570630701306730}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 778209735241bf949a10315671256ffd, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::DistanceMeasurer
+  userTransform: {fileID: 3659182323602936285}
+  redPhantom: {fileID: 7505810214820020826}
+  redCube: {fileID: 332748645}
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0
