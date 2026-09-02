@@ -56,8 +56,6 @@ public class VirtualHandAttach : MonoBehaviour
     private Vector3 initialHMDPosition;          // HMD position when grab started
     private Quaternion initialControllerRotation; // Controller rotation when grab started
     private Quaternion initialObjectRotation;     // Object rotation when grab started
-    private Quaternion centerDirectionOffset = Quaternion.identity; // Keeps initial center-relative direction to avoid snap on attach
-    private float grabDistanceRatio = 1f;         // objectDistAtGrab / virtualHandDistAtGrab; ratio=1 at grab means zero snap
     private bool grabbedRigidbodyOriginalGravity;
     private Vector3 previousControllerPosition;   // Controller position from previous frame (for delta mapping)
     private Vector3 smoothedControllerDelta;      // Low-pass filtered controller delta
@@ -231,18 +229,11 @@ public class VirtualHandAttach : MonoBehaviour
             ? bodyReferenceTransform.position
             : Camera.main.transform.position;
 
-        // Direction follows the hand's CURRENT aim every frame (full x/y/z movement), rotated by
-        // the constant angular offset captured at grab time (centerDirectionOffset) so it starts
-        // pointing exactly at the object's real bearing — combined with the distance ratio below,
-        // this guarantees zero error at the moment of grab (no snap) with no lock to a fixed axis.
-        Vector3 offset = controllerTransform.position - bodyReferencePos;
-        float d = offset.magnitude;
-        Vector3 handDirection = d > 0.0001f ? offset / d : Vector3.forward;
-        Vector3 direction = (centerDirectionOffset * handDirection).normalized;
-
-        float virtualHandDist = CalculateVirtualHandDistance(d);
-        float objectDist = virtualHandDist * grabDistanceRatio;
-        Vector3 targetPos = bodyReferencePos + direction * objectDist;
+        // Object position IS the virtual hand position, exactly as the formula defines it — no
+        // ratio, no offset. This is the only way to guarantee true 1:1 (object == hand position)
+        // whenever d <= D, matching the spec exactly. Direction follows the hand's current aim
+        // every frame (full x/y/z movement).
+        Vector3 targetPos = CalculateVirtualHandPosition(controllerTransform.position, bodyReferencePos);
 
         // Apply rotation based on controller rotation changes
         Quaternion currentControllerRotation = controllerTransform.rotation;
@@ -425,34 +416,6 @@ public class VirtualHandAttach : MonoBehaviour
         initialDistanceToController = Vector3.Distance(cubeStartPos, initialHMDPosition);
         forwardRecoveryStartRadius = initialDistanceToController;
         forwardRecoveryStartControllerRadius = Vector3.Distance(controllerPullStartPos, initialHMDPosition);
-
-        // Zero-snap setup: capture the ratio between the object's real distance from the body
-        // reference and the hand's mapped Go-Go distance at grab time. Applying this same ratio
-        // every frame (see ApplyGoGoMovement) guarantees objectDist == its real grab-time distance
-        // at t=0 exactly, so there is nothing to catch up on — no snap, no decay needed.
-        Vector3 bodyReferencePosAtGrab = bodyReferenceTransform != null
-            ? bodyReferenceTransform.position
-            : initialHMDPosition;
-        Vector3 objectOffsetAtGrab = cubeStartPos - bodyReferencePosAtGrab;
-        float objectDistAtGrab = objectOffsetAtGrab.magnitude;
-
-        float handDistAtGrab = Vector3.Distance(controllerPullStartPos, bodyReferencePosAtGrab);
-        float virtualHandDistAtGrab = Mathf.Max(0.0001f, CalculateVirtualHandDistance(handDistAtGrab));
-        grabDistanceRatio = objectDistAtGrab / virtualHandDistAtGrab;
-
-        // Preserve the initial angular difference between the hand's direction and the object's
-        // direction (both relative to the body reference) so movement still tracks the hand's
-        // CURRENT aim in every frame (full x/y/z control) while starting exactly on-target.
-        Vector3 initialControllerDir = controllerPullStartPos - bodyReferencePosAtGrab;
-        Vector3 initialObjectDir = objectOffsetAtGrab;
-        if (initialControllerDir.sqrMagnitude > 0.000001f && initialObjectDir.sqrMagnitude > 0.000001f)
-        {
-            centerDirectionOffset = Quaternion.FromToRotation(initialControllerDir.normalized, initialObjectDir.normalized);
-        }
-        else
-        {
-            centerDirectionOffset = Quaternion.identity;
-        }
 
         // Freeze rotation via Rigidbody constraints so physics doesn't spin the object, and disable
         // gravity so it can't fall between our position updates (was causing a downward jump on grab).
