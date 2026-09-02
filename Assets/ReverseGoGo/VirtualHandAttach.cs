@@ -32,6 +32,8 @@ public class VirtualHandAttach : MonoBehaviour
     public float goGoThreshold = 0.5f;
     [Tooltip("k — Go-Go extension coefficient controlling how rapidly the virtual hand extends.")]
     public float goGoScalingFactor = 2.0f;
+    [Tooltip("Radius around the mapped virtual hand position used to detect touching a grabbable object.")]
+    public float virtualHandTouchRadius = 0.12f;
 
     [Header("Direct Grab Targeting")]
     public float directGrabSelectionRadius = 0.12f; // Fallback selection radius when ray is hidden near hand
@@ -128,6 +130,23 @@ public class VirtualHandAttach : MonoBehaviour
         if (virtualHand == null || selector == null)
             return;
 
+        // Body reference (O), same one used by the movement mapping.
+        Vector3 bodyReferencePos = bodyReferenceTransform != null
+            ? bodyReferenceTransform.position
+            : Camera.main.transform.position;
+
+        // Track the virtual hand at the Go-Go formula position every frame, and detect whatever
+        // it is currently touching — matching Traditional Go-Go: you can only grab what your
+        // (possibly extended) virtual hand actually reaches, so there is nothing to snap to.
+        GameObject touchingObject = null;
+        if (!isAttached)
+        {
+            Vector3 virtualHandPos = CalculateVirtualHandPosition(controllerTransform.position, bodyReferencePos);
+            virtualHand.position = virtualHandPos;
+            virtualHand.rotation = controllerTransform.rotation;
+            touchingObject = FindVirtualHandTouchTarget(virtualHandPos);
+        }
+
         // ===== TRIGGER BUTTON: Attach hand and activate Go-Go mode =====
         if (triggerAction.action.WasPressedThisFrame() && !isAttached)
         {
@@ -137,16 +156,9 @@ public class VirtualHandAttach : MonoBehaviour
                 return;
             }
 
-            GameObject selected = selector.GetCurrentTarget();
-            if (selected == null)
+            if (touchingObject != null)
             {
-                // When the ray is hidden in near-hand range, allow direct proximity re-grab.
-                selected = FindClosestDirectGrabTarget();
-            }
-
-            if (selected != null)
-            {
-                StartGoGoMode(selected);
+                StartGoGoMode(touchingObject);
             }
         }
 
@@ -298,7 +310,41 @@ public class VirtualHandAttach : MonoBehaviour
         return bestTarget;
     }
 
-    // Returns the point on the object's bounding-sphere surface closest to referencePoint.
+    // Finds the closest grabbable object touching the virtual hand's current mapped position —
+    // this is what gates grabbing so the object never needs to jump to reach the hand.
+    private GameObject FindVirtualHandTouchTarget(Vector3 virtualHandPos)
+    {
+        if (selector == null)
+            return null;
+
+        float searchRadius = Mathf.Max(0.01f, virtualHandTouchRadius);
+        Collider[] hits = Physics.OverlapSphere(virtualHandPos, searchRadius, selector.selectableLayers);
+        if (hits == null || hits.Length == 0)
+            return null;
+
+        GameObject bestTarget = null;
+        float bestSqrDistance = float.MaxValue;
+
+        for (int i = 0; i < hits.Length; i++)
+        {
+            Collider hit = hits[i];
+            if (hit == null || hit.isTrigger)
+                continue;
+
+            GameObject candidate = hit.attachedRigidbody != null ? hit.attachedRigidbody.gameObject : hit.gameObject;
+            if (candidate == null)
+                continue;
+
+            float sqrDistance = (candidate.transform.position - virtualHandPos).sqrMagnitude;
+            if (sqrDistance < bestSqrDistance)
+            {
+                bestSqrDistance = sqrDistance;
+                bestTarget = candidate;
+            }
+        }
+
+        return bestTarget;
+    }
     private Vector3 GetSurfacePoint(GameObject obj, Vector3 referencePoint)
     {
         Renderer rend = obj.GetComponent<Renderer>();
