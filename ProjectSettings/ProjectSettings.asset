@@ -12,7 +12,7 @@ PlayerSettings:
   targetDevice: 2
   useOnDemandResources: 0
   accelerometerFrequency: 60
-  companyName: DefaultCompany
+  companyName: ReverseGoGoStudy
   productName: ReverseGoGo
   defaultCursor: {fileID: 0}
   cursorHotspot: {x: 0, y: 0}
@@ -880,7 +880,7 @@ PlayerSettings:
   qnxGraphicConfPath: 
   apiCompatibilityLevel: 6
   captureStartupLogs: {}
-  activeInputHandler: 2
+  activeInputHandler: 1
   windowsGamepadBackendHint: 0
   cloudProjectId: e2902f02-2a86-4625-9601-e84857136c6f
   framebufferDepthMemorylessMode: 0
