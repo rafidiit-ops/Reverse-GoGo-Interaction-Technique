@@ -40,6 +40,7 @@ public class VirtualHandAttach : MonoBehaviour
     public float nearHandResponsivenessMultiplier = 2.5f; // Higher response when object is near threshold
     public float nearHandConvergenceSpeed = 8f;           // Pulls object toward controller near threshold
 
+
     [Header("Controller Visuals")]
     public bool hideControllerWhileAttached = true;
 
@@ -314,7 +315,6 @@ public class VirtualHandAttach : MonoBehaviour
         float safeThreshold = Mathf.Max(0.001f, threshold);
         return Mathf.Max(1f, objectDistance / safeThreshold);
     }
-
 
     private void ReleaseHand()
     {
